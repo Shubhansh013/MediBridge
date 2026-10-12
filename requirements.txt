@@ -1,0 +1,13 @@
+# MediBridge - Foundation Dependencies (Phase 1B)
+
+# Data validation and parsing
+pydantic>=2.7.0,<3.0.0
+
+# Database ORM (agreed stack, required for database contract alignment)
+sqlalchemy>=2.0.30,<3.0.0
+
+# Configuration and environment variable management
+python-dotenv>=1.0.0,<2.0.0
+
+# Automated testing
+pytest>=8.0.0,<9.0.0
