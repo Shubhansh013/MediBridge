@@ -1,0 +1,85 @@
+"""Services subpackage for MediBridge business logic and AI parsing."""
+
+from medibridge.services.ai_parser import parse_stock_message
+from medibridge.services.proposal_adapter import (
+    AdaptedProposalResult,
+    ParsedProposalInput,
+    UnresolvedProposalItem,
+    adapt_parsed_item,
+    adapt_stock_proposal,
+    compute_review_flag,
+)
+from medibridge.services.proposal_service import (
+    CatalogueMedicine,
+    ProposalServiceResult,
+    ProposalServiceStatus,
+    StockProposalRepositoryProtocol,
+    StoredProposalRecord,
+    process_stock_message,
+)
+from medibridge.services.confirmation_service import (
+    ConfirmationRepositoryProtocol,
+    ConfirmationResult,
+    InventoryRecord,
+    RejectionResult,
+    check_proposal_expiry,
+    confirm_and_apply_proposal,
+    expire_proposals_job,
+    reject_proposal_workflow,
+)
+from medibridge.services.history_service import (
+    HistoryRepositoryProtocol,
+    StockHistoryRecord,
+    UndoEvaluationResult,
+    UndoExecutionResult,
+    evaluate_can_undo,
+    orchestrate_undo,
+)
+from medibridge.services.catalogue_service import (
+    CatalogueMedicineDetail,
+    CatalogueRepositoryProtocol,
+    SearchResultItem,
+    SubstituteGroupResult,
+    find_substitutes,
+    format_disambiguation_prompt,
+    record_substitute_approval,
+    search_catalogue,
+)
+
+__all__ = [
+    "parse_stock_message",
+    "ParsedProposalInput",
+    "UnresolvedProposalItem",
+    "AdaptedProposalResult",
+    "compute_review_flag",
+    "adapt_parsed_item",
+    "adapt_stock_proposal",
+    "CatalogueMedicine",
+    "StoredProposalRecord",
+    "StockProposalRepositoryProtocol",
+    "ProposalServiceStatus",
+    "ProposalServiceResult",
+    "process_stock_message",
+    "ConfirmationRepositoryProtocol",
+    "ConfirmationResult",
+    "InventoryRecord",
+    "RejectionResult",
+    "check_proposal_expiry",
+    "confirm_and_apply_proposal",
+    "expire_proposals_job",
+    "reject_proposal_workflow",
+    "HistoryRepositoryProtocol",
+    "StockHistoryRecord",
+    "UndoEvaluationResult",
+    "UndoExecutionResult",
+    "evaluate_can_undo",
+    "orchestrate_undo",
+    "CatalogueMedicineDetail",
+    "CatalogueRepositoryProtocol",
+    "SearchResultItem",
+    "SubstituteGroupResult",
+    "find_substitutes",
+    "format_disambiguation_prompt",
+    "record_substitute_approval",
+    "search_catalogue",
+]

@@ -1,7 +1,10 @@
-﻿__pycache__/
-*.py[cod]
-.venv/
 .env
-*.db
+__pycache__/
+*.pyc
+medibridge.db
 .pytest_cache/
+.coverage
+htmlcov/
+dist/
+build/
 *.egg-info/

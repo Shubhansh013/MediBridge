@@ -1,22 +1,24 @@
 [build-system]
 requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
-
 [project]
-name = "medibridge-db"
+name = "medibridge"
 version = "0.1.0"
-description = "Database and persistence layer for MediBridge"
+description = "Hyperlocal Medicine Availability Agent"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "SQLAlchemy>=2.0",
+    "pydantic>=2.7.0,<3.0.0",
+    "sqlalchemy>=2.0.30,<3.0.0",
+    "python-dotenv>=1.0.0,<2.0.0",
 ]
-
 [project.optional-dependencies]
 dev = [
-    "pytest>=7.0",
+    "pytest>=8.0.0,<9.0.0",
 ]
-
 [tool.setuptools.packages.find]
-where = ["."]
-include = ["medibridge_db*"]
+where = ["src", "."]
+include = ["medibridge*", "medibridge_db*"]
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src", "."]
