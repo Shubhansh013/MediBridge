@@ -353,6 +353,7 @@ class TestDBOperationsAdapter(unittest.TestCase):
             session_factory=self.session_factory,
             operations=None,
         )
+        unconfigured_adapter._operations = None
         with self.assertRaises(RuntimeError) as ctx:
             unconfigured_adapter.is_user_linked_to_pharmacy(42, 5)
         self.assertIn("medibridge_db.operations", str(ctx.exception))
@@ -735,6 +736,610 @@ class TestDBOperationsAdapter(unittest.TestCase):
         self.assertEqual(inv.quantity, 15)
         self.assertEqual(len(recorded_calls), 1)
         self.assertEqual(recorded_calls[0][1:], (501, 42, 5))
+
+
+class TestRealDBOperationsIntegration(unittest.TestCase):
+    """End-to-end integration tests connecting DBOperationsAdapter directly
+    to Member 2's medibridge_db.database and medibridge_db.operations layer.
+
+    Verifies the 10 core integration scenarios against a real SQLite database.
+    """
+
+    def setUp(self) -> None:
+        from sqlalchemy import create_engine, event
+        from sqlalchemy.pool import StaticPool
+        import medibridge_db.operations as real_ops
+        from medibridge_db.database import Base as RealDBBase, _apply_sqlite_pragmas
+        from medibridge_db.models import (
+            Pharmacy,
+            User,
+            UserPharmacy,
+            Medicine,
+            MedicineAlias,
+            Inventory,
+            StockProposal,
+            StockHistory,
+            UserRole,
+            PharmacyVerification,
+            StaffRoleAtPharmacy,
+            StockStatus,
+            ProposalStatus,
+            UpdateSource,
+        )
+        from medibridge_db.normalize import normalize_composition
+
+        self.real_ops = real_ops
+        self.RealDBBase = RealDBBase
+        self.StockProposal = StockProposal
+        self.StockHistory = StockHistory
+        self.Inventory = Inventory
+        self.ProposalStatus = ProposalStatus
+        self.StockStatus = StockStatus
+        self.UpdateSource = UpdateSource
+
+        self.engine = create_engine(
+            "sqlite:///:memory:",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+            future=True,
+        )
+        event.listen(self.engine, "connect", _apply_sqlite_pragmas)
+        RealDBBase.metadata.create_all(self.engine)
+        self.session_factory = sessionmaker(
+            bind=self.engine,
+            class_=Session,
+            expire_on_commit=False,
+        )
+        self.adapter = DBOperationsAdapter(
+            session_factory=self.session_factory,
+            operations=real_ops,
+        )
+
+        # Seed initial entities
+        with self.session_factory() as session:
+            self.p1 = Pharmacy(
+                name="Apollo Pharmacy",
+                locality="Delhi",
+                address="123 Connaught Place",
+                latitude=28.6139,
+                longitude=77.2090,
+                telegram_chat_id=111111,
+                verification_state=PharmacyVerification.verified,
+                is_active=True,
+            )
+            self.p2 = Pharmacy(
+                name="Fortis Pharmacy",
+                locality="Delhi",
+                address="456 Hauz Khas",
+                latitude=28.6200,
+                longitude=77.2100,
+                telegram_chat_id=222222,
+                verification_state=PharmacyVerification.verified,
+                is_active=True,
+            )
+            session.add_all([self.p1, self.p2])
+            session.flush()
+
+            self.u1 = User(
+                telegram_user_id=10101,
+                display_name="Chemist 1",
+                role=UserRole.chemist,
+                is_active=True,
+            )
+            self.u2 = User(
+                telegram_user_id=20202,
+                display_name="Chemist 2",
+                role=UserRole.chemist,
+                is_active=True,
+            )
+            session.add_all([self.u1, self.u2])
+            session.flush()
+
+            up1 = UserPharmacy(
+                user_id=self.u1.id,
+                pharmacy_id=self.p1.id,
+                role_at_pharmacy=StaffRoleAtPharmacy.chemist,
+            )
+            up2 = UserPharmacy(
+                user_id=self.u2.id,
+                pharmacy_id=self.p2.id,
+                role_at_pharmacy=StaffRoleAtPharmacy.chemist,
+            )
+            session.add_all([up1, up2])
+
+            self.med1 = Medicine(
+                brand_name="Dolo 650",
+                generic_name="Paracetamol",
+                composition_key=normalize_composition("Paracetamol"),
+                strength="650mg",
+                form="tablet",
+                is_schedule_h=False,
+                manufacturer="Micro Labs",
+                is_active=True,
+            )
+            self.med2 = Medicine(
+                brand_name="Crocin 650",
+                generic_name="Paracetamol",
+                composition_key=normalize_composition("Paracetamol"),
+                strength="650mg",
+                form="tablet",
+                is_schedule_h=False,
+                manufacturer="GSK",
+                is_active=True,
+            )
+            session.add_all([self.med1, self.med2])
+            session.flush()
+
+            alias1 = MedicineAlias(
+                medicine_id=self.med1.id,
+                alias="dolo",
+                alias_type="short",
+            )
+            session.add(alias1)
+
+            self.inv1 = Inventory(
+                pharmacy_id=self.p1.id,
+                medicine_id=self.med1.id,
+                stock_status=StockStatus.in_stock,
+                quantity=50,
+                last_update_source=UpdateSource.seed,
+            )
+            session.add(self.inv1)
+            session.commit()
+
+            self.pharmacy_id = self.p1.id
+            self.pharmacy2_id = self.p2.id
+            self.user_id = self.u1.id
+            self.user2_id = self.u2.id
+            self.medicine_id = self.med1.id
+            self.inventory_id = self.inv1.id
+
+    def tearDown(self) -> None:
+        self.engine.dispose()
+
+    def test_scenario_1_create_stock_proposal(self) -> None:
+        """Scenario 1: Chemist creates a valid stock proposal."""
+        parsed = ParsedProposalInput(
+            brand_name="Dolo 650",
+            parsed_salt="Paracetamol",
+            parsed_strength="650mg",
+            parsed_form="tablet",
+            parsed_quantity=10,
+            parsed_intent=StockActionEnum.IN_STOCK,
+            confidence=0.96,
+            flagged_for_review=False,
+        )
+        record = self.adapter.create_stock_proposal(
+            pharmacy_id=self.pharmacy_id,
+            chemist_user_id=self.user_id,
+            raw_message="Dolo 650 10 strips",
+            parsed=parsed,
+        )
+        self.assertIsNotNone(record.id)
+        self.assertEqual(record.status, "PENDING")
+        self.assertEqual(record.brand_name, "Dolo 650")
+        self.assertEqual(record.parsed_salt, "Paracetamol")
+        self.assertEqual(record.parsed_strength, "650mg")
+        self.assertEqual(record.parsed_intent, StockActionEnum.IN_STOCK)
+        self.assertEqual(record.parsed_quantity, 10)
+        self.assertAlmostEqual(record.confidence, 0.96)
+        self.assertGreater(record.expires_at, datetime.now(timezone.utc))
+
+        with self.session_factory() as sess:
+            db_p = sess.get(self.StockProposal, record.id)
+            self.assertIsNotNone(db_p)
+            self.assertEqual(db_p.status, self.ProposalStatus.pending)
+
+    def test_scenario_2_reject_proposal_without_modifying_inventory(self) -> None:
+        """Scenario 2: Chemist rejects proposal; inventory remains unchanged."""
+        parsed = ParsedProposalInput(
+            brand_name="Dolo 650",
+            parsed_salt="Paracetamol",
+            parsed_strength="650mg",
+            parsed_form="tablet",
+            parsed_quantity=0,
+            parsed_intent=StockActionEnum.OUT_OF_STOCK,
+            confidence=0.90,
+            flagged_for_review=False,
+        )
+        prop = self.adapter.create_stock_proposal(
+            pharmacy_id=self.pharmacy_id,
+            chemist_user_id=self.user_id,
+            raw_message="Dolo 650 khatam",
+            parsed=parsed,
+        )
+        rejected = self.adapter.reject_proposal(
+            proposal_id=prop.id,
+            rejected_by_user_id=self.user_id,
+            pharmacy_id=self.pharmacy_id,
+            reason="User typed mistake",
+        )
+        self.assertEqual(rejected.status, "REJECTED")
+        self.assertEqual(rejected.review_note, "User typed mistake")
+
+        with self.session_factory() as sess:
+            db_p = sess.get(self.StockProposal, prop.id)
+            self.assertEqual(db_p.status, self.ProposalStatus.rejected)
+            self.assertEqual(db_p.review_note, "User typed mistake")
+
+            # Verify inventory was NOT modified
+            inv = sess.get(self.Inventory, self.inventory_id)
+            self.assertEqual(inv.stock_status, self.StockStatus.in_stock)
+            self.assertEqual(inv.quantity, 50)
+
+    def test_scenario_3_confirm_and_apply_authorized_unexpired_proposal(self) -> None:
+        """Scenario 3: Chemist confirms authorized, unexpired proposal; inventory updates."""
+        parsed = ParsedProposalInput(
+            brand_name="Dolo 650",
+            parsed_salt="Paracetamol",
+            parsed_strength="650mg",
+            parsed_form="tablet",
+            parsed_quantity=0,
+            parsed_intent=StockActionEnum.OUT_OF_STOCK,
+            confidence=0.98,
+            flagged_for_review=False,
+        )
+        prop = self.adapter.create_stock_proposal(
+            pharmacy_id=self.pharmacy_id,
+            chemist_user_id=self.user_id,
+            raw_message="Dolo 650 khatam",
+            parsed=parsed,
+        )
+        now = datetime.now(timezone.utc)
+        result = confirm_and_apply_proposal(
+            proposal_id=prop.id,
+            user_id=self.user_id,
+            pharmacy_id=self.pharmacy_id,
+            repository=self.adapter,
+            current_time=now,
+        )
+        self.assertTrue(result.success)
+        self.assertEqual(result.status, "CONFIRMED")
+        self.assertEqual(result.updated_inventory.stock_status, StockActionEnum.OUT_OF_STOCK)
+        self.assertEqual(result.updated_inventory.quantity, 0)
+
+        with self.session_factory() as sess:
+            inv = sess.get(self.Inventory, self.inventory_id)
+            self.assertEqual(inv.stock_status, self.StockStatus.out_of_stock)
+            self.assertEqual(inv.quantity, 0)
+            self.assertEqual(inv.last_updated_by, self.user_id)
+
+            db_p = sess.get(self.StockProposal, prop.id)
+            self.assertEqual(db_p.status, self.ProposalStatus.confirmed)
+            self.assertEqual(db_p.confirmed_by, self.user_id)
+
+    def test_scenario_4_reject_expired_proposal_at_apply_time(self) -> None:
+        """Scenario 4: Attempting to confirm an expired proposal raises ProposalExpiredError."""
+        from medibridge.exceptions import ProposalExpiredError
+        parsed = ParsedProposalInput(
+            brand_name="Dolo 650",
+            parsed_salt="Paracetamol",
+            parsed_strength="650mg",
+            parsed_form="tablet",
+            parsed_quantity=10,
+            parsed_intent=StockActionEnum.IN_STOCK,
+            confidence=0.90,
+            flagged_for_review=False,
+        )
+        prop = self.adapter.create_stock_proposal(
+            pharmacy_id=self.pharmacy_id,
+            chemist_user_id=self.user_id,
+            raw_message="Dolo 650 10",
+            parsed=parsed,
+        )
+        future_time = prop.expires_at + timedelta(minutes=5)
+        with self.assertRaises(ProposalExpiredError):
+            confirm_and_apply_proposal(
+                proposal_id=prop.id,
+                user_id=self.user_id,
+                pharmacy_id=self.pharmacy_id,
+                repository=self.adapter,
+                current_time=future_time,
+            )
+
+        with self.session_factory() as sess:
+            inv = sess.get(self.Inventory, self.inventory_id)
+            self.assertEqual(inv.stock_status, self.StockStatus.in_stock)
+            self.assertEqual(inv.quantity, 50)
+
+    def test_scenario_5_verify_inventory_and_stock_history_after_application(self) -> None:
+        """Scenario 5: Verified stock_history record created upon proposal confirmation."""
+        parsed = ParsedProposalInput(
+            brand_name="Dolo 650",
+            parsed_salt="Paracetamol",
+            parsed_strength="650mg",
+            parsed_form="tablet",
+            parsed_quantity=0,
+            parsed_intent=StockActionEnum.OUT_OF_STOCK,
+            confidence=0.95,
+            flagged_for_review=False,
+        )
+        prop = self.adapter.create_stock_proposal(
+            pharmacy_id=self.pharmacy_id,
+            chemist_user_id=self.user_id,
+            raw_message="Dolo 650 khatam",
+            parsed=parsed,
+        )
+        confirm_and_apply_proposal(
+            proposal_id=prop.id,
+            user_id=self.user_id,
+            pharmacy_id=self.pharmacy_id,
+            repository=self.adapter,
+        )
+
+        history_rows = self.adapter.get_inventory_history(self.inventory_id)
+        self.assertGreaterEqual(len(history_rows), 1)
+        latest = history_rows[-1]
+        self.assertEqual(latest.change_type, "STOCK_UPDATE")
+        self.assertEqual(latest.source_proposal_id, prop.id)
+        self.assertEqual(latest.previous_stock_status, StockActionEnum.IN_STOCK)
+        self.assertEqual(latest.new_stock_status, StockActionEnum.OUT_OF_STOCK)
+        self.assertEqual(latest.previous_quantity, 50)
+        self.assertEqual(latest.new_quantity, 0)
+        self.assertEqual(latest.changed_by, self.user_id)
+
+    def test_scenario_6_undo_latest_eligible_change_and_verify_inventory_restored(self) -> None:
+        """Scenario 6: Chemist undoes latest inventory change; state is restored."""
+        parsed = ParsedProposalInput(
+            brand_name="Dolo 650",
+            parsed_salt="Paracetamol",
+            parsed_strength="650mg",
+            parsed_form="tablet",
+            parsed_quantity=0,
+            parsed_intent=StockActionEnum.OUT_OF_STOCK,
+            confidence=0.95,
+            flagged_for_review=False,
+        )
+        prop = self.adapter.create_stock_proposal(
+            pharmacy_id=self.pharmacy_id,
+            chemist_user_id=self.user_id,
+            raw_message="Dolo 650 khatam",
+            parsed=parsed,
+        )
+        confirm_and_apply_proposal(
+            proposal_id=prop.id,
+            user_id=self.user_id,
+            pharmacy_id=self.pharmacy_id,
+            repository=self.adapter,
+        )
+
+        history_rows = self.adapter.get_inventory_history(self.inventory_id)
+        target_history = history_rows[-1]
+
+        undo_result = orchestrate_undo(
+            history_id=target_history.id,
+            user_id=self.user_id,
+            pharmacy_id=self.pharmacy_id,
+            repository=self.adapter,
+        )
+        self.assertTrue(undo_result.success)
+        self.assertEqual(undo_result.undone_history_id, target_history.id)
+        self.assertEqual(undo_result.undo_history_record.change_type, "UNDO")
+        self.assertEqual(undo_result.undo_history_record.undo_of_history_id, target_history.id)
+        self.assertEqual(undo_result.restored_inventory.stock_status, StockActionEnum.IN_STOCK)
+        self.assertEqual(undo_result.restored_inventory.quantity, 50)
+
+        with self.session_factory() as sess:
+            inv = sess.get(self.Inventory, self.inventory_id)
+            self.assertEqual(inv.stock_status, self.StockStatus.in_stock)
+            self.assertEqual(inv.quantity, 50)
+            self.assertEqual(inv.last_update_source, self.UpdateSource.undo)
+
+    def test_scenario_7_reject_double_undo_and_undo_of_older_change(self) -> None:
+        """Scenario 7: Rejects double undo, undo of UNDO row, and undo of older changes."""
+        from medibridge.exceptions import (
+            CannotUndoUndoError,
+            HistoryAlreadyUndoneError,
+            NewerChangeExistsError,
+        )
+
+        parsed1 = ParsedProposalInput(
+            brand_name="Dolo 650",
+            parsed_salt="Paracetamol",
+            parsed_strength="650mg",
+            parsed_form="tablet",
+            parsed_quantity=0,
+            parsed_intent=StockActionEnum.OUT_OF_STOCK,
+            confidence=0.95,
+            flagged_for_review=False,
+        )
+        p1 = self.adapter.create_stock_proposal(
+            pharmacy_id=self.pharmacy_id,
+            chemist_user_id=self.user_id,
+            raw_message="Dolo khatam",
+            parsed=parsed1,
+        )
+        confirm_and_apply_proposal(
+            proposal_id=p1.id,
+            user_id=self.user_id,
+            pharmacy_id=self.pharmacy_id,
+            repository=self.adapter,
+        )
+        hist1 = self.adapter.get_inventory_history(self.inventory_id)[-1]
+
+        # First undo succeeds
+        undo_res = orchestrate_undo(
+            history_id=hist1.id,
+            user_id=self.user_id,
+            pharmacy_id=self.pharmacy_id,
+            repository=self.adapter,
+        )
+
+        # 1. Reject double-undo of same history row
+        with self.assertRaises(HistoryAlreadyUndoneError):
+            orchestrate_undo(
+                history_id=hist1.id,
+                user_id=self.user_id,
+                pharmacy_id=self.pharmacy_id,
+                repository=self.adapter,
+            )
+
+        # 2. Reject undo of the UNDO row itself
+        with self.assertRaises(CannotUndoUndoError):
+            orchestrate_undo(
+                history_id=undo_res.undo_history_record.id,
+                user_id=self.user_id,
+                pharmacy_id=self.pharmacy_id,
+                repository=self.adapter,
+            )
+
+        # 3. Apply two newer updates to test NewerChangeExistsError
+        parsed2 = ParsedProposalInput(
+            brand_name="Dolo 650",
+            parsed_salt="Paracetamol",
+            parsed_strength="650mg",
+            parsed_form="tablet",
+            parsed_quantity=15,
+            parsed_intent=StockActionEnum.IN_STOCK,
+            confidence=0.95,
+            flagged_for_review=False,
+        )
+        p2 = self.adapter.create_stock_proposal(
+            pharmacy_id=self.pharmacy_id,
+            chemist_user_id=self.user_id,
+            raw_message="Dolo 15",
+            parsed=parsed2,
+        )
+        confirm_and_apply_proposal(
+            proposal_id=p2.id,
+            user_id=self.user_id,
+            pharmacy_id=self.pharmacy_id,
+            repository=self.adapter,
+        )
+        hist2 = self.adapter.get_inventory_history(self.inventory_id)[-1]
+
+        parsed3 = ParsedProposalInput(
+            brand_name="Dolo 650",
+            parsed_salt="Paracetamol",
+            parsed_strength="650mg",
+            parsed_form="tablet",
+            parsed_quantity=20,
+            parsed_intent=StockActionEnum.IN_STOCK,
+            confidence=0.95,
+            flagged_for_review=False,
+        )
+        p3 = self.adapter.create_stock_proposal(
+            pharmacy_id=self.pharmacy_id,
+            chemist_user_id=self.user_id,
+            raw_message="Dolo 20",
+            parsed=parsed3,
+        )
+        confirm_and_apply_proposal(
+            proposal_id=p3.id,
+            user_id=self.user_id,
+            pharmacy_id=self.pharmacy_id,
+            repository=self.adapter,
+        )
+
+        # Trying to undo hist2 when newer change hist3 exists raises NewerChangeExistsError
+        with self.assertRaises(NewerChangeExistsError):
+            orchestrate_undo(
+                history_id=hist2.id,
+                user_id=self.user_id,
+                pharmacy_id=self.pharmacy_id,
+                repository=self.adapter,
+            )
+
+    def test_scenario_8_reject_cross_pharmacy_unauthorized_operations(self) -> None:
+        """Scenario 8: Unauthorized chemist or cross-pharmacy calls are rejected."""
+        from medibridge.exceptions import (
+            ProposalPharmacyMismatchError,
+            UserNotLinkedToPharmacyError,
+        )
+
+        parsed = ParsedProposalInput(
+            brand_name="Dolo 650",
+            parsed_salt="Paracetamol",
+            parsed_strength="650mg",
+            parsed_form="tablet",
+            parsed_quantity=10,
+            parsed_intent=StockActionEnum.IN_STOCK,
+            confidence=0.90,
+            flagged_for_review=False,
+        )
+        p_p1 = self.adapter.create_stock_proposal(
+            pharmacy_id=self.pharmacy_id,
+            chemist_user_id=self.user_id,
+            raw_message="Dolo 10",
+            parsed=parsed,
+        )
+
+        # User 2 belongs to pharmacy 2, not pharmacy 1
+        with self.assertRaises(UserNotLinkedToPharmacyError):
+            confirm_and_apply_proposal(
+                proposal_id=p_p1.id,
+                user_id=self.user2_id,
+                pharmacy_id=self.pharmacy_id,
+                repository=self.adapter,
+            )
+
+        # Calling with pharmacy 2 scope on proposal that belongs to pharmacy 1
+        with self.assertRaises(ProposalPharmacyMismatchError):
+            confirm_and_apply_proposal(
+                proposal_id=p_p1.id,
+                user_id=self.user2_id,
+                pharmacy_id=self.pharmacy2_id,
+                repository=self.adapter,
+            )
+
+        # Rejecting proposal with pharmacy mismatch
+        with self.assertRaises(ProposalPharmacyMismatchError):
+            self.adapter.reject_proposal(
+                proposal_id=p_p1.id,
+                rejected_by_user_id=self.user_id,
+                pharmacy_id=self.pharmacy2_id,
+            )
+
+    def test_scenario_9_verify_source_message_ref_persistence(self) -> None:
+        """Scenario 9: Optional source_message_ref persists faithfully in database."""
+        parsed = ParsedProposalInput(
+            brand_name="Dolo 650",
+            parsed_salt="Paracetamol",
+            parsed_strength="650mg",
+            parsed_form="tablet",
+            parsed_quantity=5,
+            parsed_intent=StockActionEnum.IN_STOCK,
+            confidence=0.90,
+            flagged_for_review=False,
+        )
+        prop = self.adapter.create_stock_proposal(
+            pharmacy_id=self.pharmacy_id,
+            chemist_user_id=self.user_id,
+            raw_message="Dolo 5",
+            parsed=parsed,
+            source_message_ref="telegram_msg_ref_998877",
+        )
+        with self.session_factory() as sess:
+            db_p = sess.get(self.StockProposal, prop.id)
+            self.assertIsNotNone(db_p)
+            self.assertEqual(db_p.source_message_ref, "telegram_msg_ref_998877")
+
+    def test_scenario_10_verify_transaction_rollback_on_failure(self) -> None:
+        """Scenario 10: Failures trigger complete rollback with zero partial state."""
+        proposal_id = None
+        with self.assertRaises(RuntimeError):
+            with self.adapter._session_scope() as sess:
+                new_prop = self.StockProposal(
+                    pharmacy_id=self.pharmacy_id,
+                    chemist_user_id=self.user_id,
+                    raw_message="Will be aborted",
+                    brand_name="Dolo 650",
+                    parsed_salt="Paracetamol",
+                    parsed_strength="650mg",
+                    parsed_intent=self.StockStatus.in_stock,
+                    confidence=0.5,
+                    status=self.ProposalStatus.pending,
+                    expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+                )
+                sess.add(new_prop)
+                sess.flush()
+                proposal_id = new_prop.id
+                raise RuntimeError("Force failure to test rollback")
+
+        self.assertIsNotNone(proposal_id)
+        with self.session_factory() as sess:
+            aborted_prop = sess.get(self.StockProposal, proposal_id)
+            self.assertIsNone(aborted_prop)
 
 
 if __name__ == "__main__":

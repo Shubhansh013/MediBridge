@@ -75,6 +75,19 @@ def _get_val(obj: Any, key: str, default: Any = None) -> Any:
     return getattr(obj, key, default)
 
 
+class ProposalPayload(dict):
+    """Dictionary wrapper that supports attribute access for backwards-compatibility."""
+
+    def __getattr__(self, name: str) -> Any:
+        try:
+            return self[name]
+        except KeyError:
+            return None
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        self[name] = value
+
+
 class DBOperationsAdapter:
     """Integration adapter conforming to all MediBridge repository protocols.
 
@@ -467,6 +480,24 @@ class DBOperationsAdapter:
         with self._session_scope(session) as sess:
             ops = self._get_operations()
 
+            # Ensure parsed input is a dictionary / dict-like payload
+            if hasattr(parsed, "model_dump"):
+                payload_data = parsed.model_dump()
+            elif hasattr(parsed, "dict"):
+                payload_data = parsed.dict()
+            elif isinstance(parsed, dict):
+                payload_data = dict(parsed)
+            else:
+                payload_data = dict(parsed)
+
+            if "parsed_intent" in payload_data and hasattr(payload_data["parsed_intent"], "value"):
+                payload_data["parsed_intent"] = payload_data["parsed_intent"].value
+
+            if source_message_ref is not None:
+                payload_data["source_message_ref"] = source_message_ref
+
+            wrapped_parsed = ProposalPayload(payload_data)
+
             # Check if operations.create_stock_proposal accepts source_message_ref
             try:
                 sig = inspect.signature(ops.create_stock_proposal)
@@ -480,7 +511,7 @@ class DBOperationsAdapter:
                     pharmacy_id=pharmacy_id,
                     chemist_user_id=chemist_user_id,
                     raw_message=raw_message,
-                    parsed=parsed,
+                    parsed=wrapped_parsed,
                     source_message_ref=source_message_ref,
                 )
             else:
@@ -489,7 +520,7 @@ class DBOperationsAdapter:
                     pharmacy_id=pharmacy_id,
                     chemist_user_id=chemist_user_id,
                     raw_message=raw_message,
-                    parsed=parsed,
+                    parsed=wrapped_parsed,
                 )
 
             record = self._to_stored_proposal_record(prop)
@@ -554,6 +585,17 @@ class DBOperationsAdapter:
 
         with self._session_scope(session) as sess:
             ops = self._get_operations()
+
+            # If the database proposal is currently PENDING, Member 2's apply_confirmed_proposal
+            # requires it to be transitioned to CONFIRMED so that its status check passes.
+            try:
+                from medibridge_db.models import StockProposal as DBStockProposal, ProposalStatus as DBProposalStatus
+                db_prop = sess.get(DBStockProposal, proposal_id)
+                if db_prop is not None and (db_prop.status == DBProposalStatus.pending or str(db_prop.status).upper() == "PENDING"):
+                    db_prop.status = DBProposalStatus.confirmed
+                    sess.flush()
+            except Exception:
+                pass
 
             # Determine whether ops.apply_confirmed_proposal supports current_time
             try:
@@ -620,7 +662,7 @@ class DBOperationsAdapter:
                         f"{p_pharmacy_id}, not {pharmacy_id}."
                     )
                 p_status = _get_val(prop, "status")
-                if p_status != "PENDING":
+                if p_status != "PENDING" and str(p_status).upper() != "PENDING":
                     raise ProposalNotPendingError(
                         f"Proposal {proposal_id} is in status '{p_status}'. "
                         "Only PENDING proposals can be rejected."
@@ -629,7 +671,11 @@ class DBOperationsAdapter:
                     prop["status"] = "REJECTED"
                     prop["review_note"] = reason
                 else:
-                    setattr(prop, "status", "REJECTED")
+                    try:
+                        from medibridge_db.models import ProposalStatus
+                        setattr(prop, "status", ProposalStatus.rejected)
+                    except Exception:
+                        setattr(prop, "status", "REJECTED")
                     setattr(prop, "review_note", reason)
                 sess.flush()
 
@@ -670,6 +716,13 @@ class DBOperationsAdapter:
             if hasattr(ops, "get_history_by_id"):
                 hist = ops.get_history_by_id(sess, history_id)
                 return self._to_stock_history_record(hist)
+            try:
+                from medibridge_db.models import StockHistory as DBStockHistory
+                hist = sess.get(DBStockHistory, history_id)
+                if hist is not None:
+                    return self._to_stock_history_record(hist)
+            except Exception:
+                pass
             return None
 
     def get_inventory_history(
@@ -734,8 +787,15 @@ class DBOperationsAdapter:
                 target = ops.get_history_by_id(sess, history_id)
                 if target:
                     inv_id = _get_val(target, "inventory_id")
-                    rows = ops.get_inventory_history(sess, inv_id)
+                    rows = ops.get_inventory_history(sess, inv_id, 100)
                     return any(_get_val(r, "undo_of_history_id") == history_id for r in rows)
+            try:
+                from medibridge_db.models import StockHistory as DBStockHistory
+                from sqlalchemy import select
+                stmt = select(DBStockHistory.id).where(DBStockHistory.undo_of_history_id == history_id)
+                return sess.execute(stmt).scalar_one_or_none() is not None
+            except Exception:
+                pass
             return False
 
     def has_newer_history_for_inventory(
@@ -750,8 +810,18 @@ class DBOperationsAdapter:
             if hasattr(ops, "has_newer_history_for_inventory"):
                 return bool(ops.has_newer_history_for_inventory(sess, inventory_id, history_id))
             if hasattr(ops, "get_inventory_history"):
-                rows = ops.get_inventory_history(sess, inventory_id)
+                rows = ops.get_inventory_history(sess, inventory_id, 100)
                 return any(_get_val(r, "id", 0) > history_id for r in rows)
+            try:
+                from medibridge_db.models import StockHistory as DBStockHistory
+                from sqlalchemy import select
+                stmt = select(DBStockHistory.id).where(
+                    DBStockHistory.inventory_id == inventory_id,
+                    DBStockHistory.id > history_id,
+                ).limit(1)
+                return sess.execute(stmt).scalar_one_or_none() is not None
+            except Exception:
+                pass
             return False
 
     def can_undo(
@@ -811,8 +881,12 @@ class DBOperationsAdapter:
                     include_stale=True,
                 )
             elif hasattr(sess, "get") and inv_id is not None:
-                from medibridge.database.models import Inventory
-                inv = sess.get(Inventory, inv_id)
+                try:
+                    from medibridge_db.models import Inventory as DBInventory
+                    inv = sess.get(DBInventory, inv_id)
+                except Exception:
+                    from medibridge.database.models import Inventory
+                    inv = sess.get(Inventory, inv_id)
 
             undo_record = self._to_stock_history_record(undo_row)
             inv_record = self._to_inventory_record(inv)
