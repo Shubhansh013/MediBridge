@@ -18,7 +18,7 @@ logging.basicConfig(
 )
 
 # Put your Telegram Bot Token here or set it in your environment
-BOT_TOKEN = "8803435363:AAE3HUPJ-lG48tYq9BHOi07E6SyHyxnQhhA"
+BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
 
 # In-memory dictionary to track mode per user for easy hackathon demoing
 # Modes: "patient" (default) or "chemist"
