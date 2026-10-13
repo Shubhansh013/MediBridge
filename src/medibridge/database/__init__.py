@@ -20,6 +20,10 @@ from medibridge.database.models import (
     User,
     UserPharmacy,
 )
+from medibridge.database.operations_adapter import (
+    DBOperationsAdapter,
+    validate_utc_datetime,
+)
 from medibridge.database.repository import SQLiteMediBridgeRepository
 
 __all__ = [
@@ -38,4 +42,6 @@ __all__ = [
     "get_session",
     "init_db",
     "SQLiteMediBridgeRepository",
+    "DBOperationsAdapter",
+    "validate_utc_datetime",
 ]

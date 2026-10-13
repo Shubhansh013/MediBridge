@@ -439,6 +439,8 @@ class SQLiteMediBridgeRepository:
         chemist_user_id: int,
         raw_message: str,
         parsed: ParsedProposalInput,
+        *,
+        source_message_ref: Optional[str] = None,
     ) -> StoredProposalRecord:
         """Persist a new PENDING stock proposal row."""
         with self._session_factory() as session:

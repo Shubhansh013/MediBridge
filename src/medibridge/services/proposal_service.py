@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from enum import Enum
+import inspect
 from typing import Any, Optional, Protocol, Sequence
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -137,6 +138,10 @@ class ProposalServiceResult(BaseModel):
         default=None,
         description="Reason or explanatory notes (e.g., authorization error or parse notes).",
     )
+    source_message_ref: Optional[str] = Field(
+        default=None,
+        description="Optional unique reference for grouping multi-medicine updates.",
+    )
 
 
 def process_stock_message(
@@ -144,6 +149,8 @@ def process_stock_message(
     pharmacy_id: int,
     chemist_user_id: int,
     repository: StockProposalRepositoryProtocol,
+    *,
+    source_message_ref: Optional[str] = None,
 ) -> ProposalServiceResult:
     """Orchestrates authorization, message parsing, catalogue lookup, and proposal creation.
 
@@ -161,6 +168,7 @@ def process_stock_message(
         pharmacy_id: Target pharmacy identifier.
         chemist_user_id: Telegram / system user ID of the chemist.
         repository: Data access provider implementing StockProposalRepositoryProtocol.
+        source_message_ref: Optional external reference (e.g. Telegram message ID) for grouping.
 
     Returns:
         ProposalServiceResult containing status, created proposals, and unresolved items.
@@ -173,6 +181,7 @@ def process_stock_message(
             pharmacy_id=pharmacy_id,
             chemist_user_id=chemist_user_id,
             reason=f"User {chemist_user_id} is not linked to pharmacy {pharmacy_id}.",
+            source_message_ref=source_message_ref,
         )
 
     # 2. Input validation
@@ -183,6 +192,7 @@ def process_stock_message(
             pharmacy_id=pharmacy_id,
             chemist_user_id=chemist_user_id,
             reason="Empty or non-string message provided.",
+            source_message_ref=source_message_ref,
         )
 
     # 3. Parsing message
@@ -194,6 +204,7 @@ def process_stock_message(
             pharmacy_id=pharmacy_id,
             chemist_user_id=chemist_user_id,
             reason="Message could not be parsed as a current stock update (conversational, uncertain, or future-oriented).",
+            source_message_ref=source_message_ref,
         )
 
     # 4. Catalogue Matching for each parsed item
@@ -289,12 +300,27 @@ def process_stock_message(
     # 5. Create PENDING proposals for resolved items
     created_proposals: list[StoredProposalRecord] = []
     for resolved_input in adapted_result.resolved:
-        proposal_record = repository.create_stock_proposal(
-            pharmacy_id=pharmacy_id,
-            chemist_user_id=chemist_user_id,
-            raw_message=raw_message,
-            parsed=resolved_input,
-        )
+        try:
+            sig = inspect.signature(repository.create_stock_proposal)
+            has_ref = "source_message_ref" in sig.parameters
+        except (ValueError, TypeError):
+            has_ref = False
+
+        if has_ref and source_message_ref is not None:
+            proposal_record = repository.create_stock_proposal(
+                pharmacy_id=pharmacy_id,
+                chemist_user_id=chemist_user_id,
+                raw_message=raw_message,
+                parsed=resolved_input,
+                source_message_ref=source_message_ref,
+            )
+        else:
+            proposal_record = repository.create_stock_proposal(
+                pharmacy_id=pharmacy_id,
+                chemist_user_id=chemist_user_id,
+                raw_message=raw_message,
+                parsed=resolved_input,
+            )
         created_proposals.append(proposal_record)
 
     # 6. Determine service outcome status
@@ -319,4 +345,5 @@ def process_stock_message(
         created_proposals=created_proposals,
         unresolved_items=all_unresolved,
         reason=reason,
+        source_message_ref=source_message_ref,
     )
