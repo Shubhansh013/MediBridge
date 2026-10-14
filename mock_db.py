@@ -1,141 +1,195 @@
-import sqlite3
-import os
 import datetime
-from typing import List, Dict, Any
+import os
+import sqlite3
+from typing import Any, Dict, List, Optional
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session, sessionmaker
+
+from medibridge_db.database import Base, create_db_engine, utc_now
+from medibridge_db.models import (
+    User,
+    UserRole,
+    HistoryChangeType,
+    Inventory,
+    Medicine,
+    Pharmacy,
+    StockHistory,
+    StockStatus,
+    UpdateSource,
+)
+from medibridge_db.operations import (
+    find_medicine_by_alias,
+    get_substitutes_for_medicine,
+    search_medicines,
+)
+from medibridge_db.seed import seed_database
 
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "medibridge.db")
+DATABASE_URL = f"sqlite:///{DB_PATH}"
+
+_engine = None
+_SessionFactory = None
+
+
+def get_engine():
+    global _engine, _SessionFactory
+    if _engine is None:
+        _engine = create_db_engine(DATABASE_URL)
+        _SessionFactory = sessionmaker(bind=_engine, class_=Session, expire_on_commit=False)
+    return _engine
+
+
+def get_session() -> Session:
+    get_engine()
+    return _SessionFactory()
+
 
 def get_connection():
     conn = sqlite3.connect(DB_PATH)
     conn.execute("PRAGMA journal_mode=WAL;")  # Enable WAL mode for high concurrency
     return conn
 
+
 def init_db():
-    conn = get_connection()
-    cursor = conn.cursor()
+    engine = get_engine()
+    Base.metadata.create_all(bind=engine)
+    with get_session() as session:
+        count = session.query(Pharmacy).count()
+        if count == 0:
+            seed_database(session)
+            session.commit()
 
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS pharmacies (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        locality TEXT NOT NULL,
-        lat REAL NOT NULL,
-        lng REAL NOT NULL
-    );
-    """)
-
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS inventory (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        pharmacy_id INTEGER NOT NULL,
-        medicine_name TEXT NOT NULL,
-        salt TEXT NOT NULL,
-        is_available BOOLEAN NOT NULL DEFAULT 1,
-        last_updated TEXT NOT NULL,
-        FOREIGN KEY (pharmacy_id) REFERENCES pharmacies (id)
-    );
-    """)
-
-    # Seed data if empty
-    cursor.execute("SELECT COUNT(*) FROM pharmacies;")
-    if cursor.fetchone()[0] == 0:
-        cursor.executemany("""
-            INSERT INTO pharmacies (name, locality, lat, lng) VALUES (?, ?, ?, ?);
-        """, [
-            ("Sharma Medicos", "Rohini Sector 14, Delhi", 28.7165, 77.1154),
-            ("Aggarwal Pharmacy", "Rohini Sector 14, Delhi", 28.7180, 77.1140),
-            ("Gupta Chemist", "Rohini Sector 15, Delhi", 28.7210, 77.1190)
-        ])
-
-        now_str = datetime.datetime.now().strftime("%I:%M %p")
-        # Sample inventory entries
-        cursor.executemany("""
-            INSERT INTO inventory (pharmacy_id, medicine_name, salt, is_available, last_updated) VALUES (?, ?, ?, ?, ?);
-        """, [
-            (1, "Dolo 650", "Paracetamol 650mg", 1, now_str),
-            (1, "Azithral 500", "Azithromycin 500mg", 1, now_str),
-            (2, "Calpol 650", "Paracetamol 650mg", 1, now_str),
-            (2, "Dolo 650", "Paracetamol 650mg", 1, now_str),
-            (3, "Pan 40", "Pantoprazole 40mg", 1, now_str),
-            (3, "Calpol 650", "Paracetamol 650mg", 1, now_str)
-        ])
-
-    conn.commit()
-    conn.close()
 
 def search_medicine(query: str) -> List[Dict[str, Any]]:
-    conn = get_connection()
-    cursor = conn.cursor()
-    q = f"%{query.strip()}%"
+    init_db()
+    results: List[Dict[str, Any]] = []
+    seen_keys = set()
 
-    cursor.execute("""
-        SELECT p.name, p.locality, p.lat, p.lng, i.medicine_name, i.salt, i.is_available, i.last_updated
-        FROM inventory i
-        JOIN pharmacies p ON i.pharmacy_id = p.id
-        WHERE i.medicine_name LIKE ? OR i.salt LIKE ?
-    """, (q, q))
+    with get_session() as session:
+        meds = search_medicines(session, query, limit=10)
 
-    rows = cursor.fetchall()
-    results = []
+        # If no medicines found directly by brand/generic, try alias
+        if not meds:
+            alias_med = find_medicine_by_alias(session, query)
+            if alias_med:
+                meds = [alias_med]
 
-    matched_salts = set()
-    for row in rows:
-        matched_salts.add(row[5])
-        results.append({
-            "pharmacy_name": row[0],
-            "locality": row[1],
-            "lat": row[2],
-            "lng": row[3],
-            "medicine_name": row[4],
-            "salt": row[5],
-            "is_available": bool(row[6]),
-            "last_updated": row[7],
-            "is_substitute": False,
-            "substitute_note": None
-        })
+        for med in meds:
+            inv_items = session.query(Inventory).filter_by(medicine_id=med.id).all()
+            for inv in inv_items:
+                pharm = inv.pharmacy
+                if not pharm or not pharm.is_active:
+                    continue
+                key = (pharm.id, med.id)
+                if key in seen_keys:
+                    continue
+                seen_keys.add(key)
 
-    # If the searched brand is out of stock in all shops or specific shop, suggest identical salt alternatives
-    if matched_salts:
-        for salt in matched_salts:
-            cursor.execute("""
-                SELECT p.name, p.locality, p.lat, p.lng, i.medicine_name, i.salt, i.is_available, i.last_updated
-                FROM inventory i
-                JOIN pharmacies p ON i.pharmacy_id = p.id
-                WHERE i.salt = ? AND i.medicine_name NOT LIKE ? AND i.is_available = 1
-            """, (salt, q))
-            sub_rows = cursor.fetchall()
-            for s in sub_rows:
+                ts_str = inv.last_confirmed_at.strftime("%I:%M %p") if inv.last_confirmed_at else "Recently"
+                is_avail = inv.stock_status in (StockStatus.in_stock, StockStatus.low_stock)
+
                 results.append({
-                    "pharmacy_name": s[0],
-                    "locality": s[1],
-                    "lat": s[2],
-                    "lng": s[3],
-                    "medicine_name": s[4],
-                    "salt": s[5],
-                    "is_available": True,
-                    "last_updated": s[7],
-                    "is_substitute": True,
-                    "substitute_note": f"Alternative with identical {s[5]} formulation. Confirm at counter."
+                    "pharmacy_name": pharm.name,
+                    "locality": pharm.locality,
+                    "lat": pharm.latitude,
+                    "lng": pharm.longitude,
+                    "medicine_name": med.brand_name,
+                    "salt": med.generic_name,
+                    "is_available": is_avail,
+                    "last_updated": ts_str,
+                    "is_substitute": False,
+                    "substitute_note": None,
                 })
 
-    conn.close()
+            # Look up substitutes for this medicine
+            substitutes = get_substitutes_for_medicine(session, med.id, None)
+            for sub in substitutes:
+                sub_invs = session.query(Inventory).filter_by(medicine_id=sub.id).all()
+                for inv in sub_invs:
+                    pharm = inv.pharmacy
+                    if not pharm or not pharm.is_active:
+                        continue
+                    key = (pharm.id, sub.id)
+                    if key in seen_keys:
+                        continue
+                    seen_keys.add(key)
+
+                    if inv.stock_status in (StockStatus.in_stock, StockStatus.low_stock):
+                        ts_str = inv.last_confirmed_at.strftime("%I:%M %p") if inv.last_confirmed_at else "Recently"
+                        results.append({
+                            "pharmacy_name": pharm.name,
+                            "locality": pharm.locality,
+                            "lat": pharm.latitude,
+                            "lng": pharm.longitude,
+                            "medicine_name": sub.brand_name,
+                            "salt": sub.generic_name,
+                            "is_available": True,
+                            "last_updated": ts_str,
+                            "is_substitute": True,
+                            "substitute_note": f"Alternative with identical {sub.generic_name} formulation. Confirm at counter.",
+                        })
+
     return results
 
+
 def update_stock(pharmacy_id: int, medicine_name: str, is_available: bool) -> bool:
-    conn = get_connection()
-    cursor = conn.cursor()
-    now_str = datetime.datetime.now().strftime("%I:%M %p")
+    init_db()
+    with get_session() as session:
+        # Find medicine by exact brand or alias
+        med = find_medicine_by_alias(session, medicine_name)
+        if not med:
+            meds = search_medicines(session, medicine_name, limit=1)
+            if meds:
+                med = meds[0]
 
-    cursor.execute("""
-        UPDATE inventory
-        SET is_available = ?, last_updated = ?
-        WHERE pharmacy_id = ? AND medicine_name LIKE ?
-    """, (1 if is_available else 0, now_str, pharmacy_id, f"%{medicine_name.strip()}%"))
+        if not med:
+            return False
 
-    updated = cursor.rowcount > 0
-    conn.commit()
-    conn.close()
-    return updated
+        inv = session.query(Inventory).filter_by(pharmacy_id=pharmacy_id, medicine_id=med.id).first()
+        new_status = StockStatus.in_stock if is_available else StockStatus.out_of_stock
+        prev_status = inv.stock_status if inv else None
+        prev_qty = inv.quantity if inv else 0
+        now = utc_now()
+
+        if inv:
+            inv.stock_status = new_status
+            inv.last_confirmed_at = now
+            inv.last_update_source = UpdateSource.chemist
+            if is_available and (inv.quantity is None or inv.quantity == 0):
+                inv.quantity = 10
+            elif not is_available:
+                inv.quantity = 0
+        else:
+            inv = Inventory(
+                pharmacy_id=pharmacy_id,
+                medicine_id=med.id,
+                stock_status=new_status,
+                quantity=10 if is_available else 0,
+                last_confirmed_at=now,
+                last_update_source=UpdateSource.chemist,
+            )
+            session.add(inv)
+            session.flush()
+
+        # Append StockHistory audit trail
+        history = StockHistory(
+            inventory_id=inv.id,
+            pharmacy_id=pharmacy_id,
+            medicine_id=med.id,
+            changed_by=session.query(User).filter_by(role=UserRole.chemist).first().id if session.query(User).filter_by(role=UserRole.chemist).first() else 1,
+            change_type=HistoryChangeType.stock_update,
+            previous_stock_status=prev_status,
+            new_stock_status=new_status,
+            previous_quantity=prev_qty,
+            new_quantity=inv.quantity,
+            change_reason="Updated via quick action",
+            created_at=now,
+        )
+        session.add(history)
+        session.commit()
+        return True
+
 
 # Automatically initialize database when imported
 init_db()

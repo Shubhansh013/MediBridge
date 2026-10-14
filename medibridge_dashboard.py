@@ -354,30 +354,56 @@ DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "medibridge.d
 
 @st.cache_data(ttl=5, show_spinner=False)
 def fetch_inventory_data(db_path: str, refresh_token: int = 0) -> pd.DataFrame:
-    """Read inventory from the existing SQLite database. No schema changes."""
+    """Read inventory from the SQLite database (supporting both normalized and flat schemas)."""
     del refresh_token  # Used only to invalidate the cache after manual refresh.
 
     if not os.path.exists(db_path):
-        return pd.DataFrame()
-
-    query = """
-        SELECT
-            p.name AS "Pharmacy",
-            p.locality AS "Locality",
-            i.medicine_name AS "Medicine Name",
-            i.salt AS "Salt Formulation",
-            CASE
-                WHEN i.is_available = 1 THEN 'In Stock'
-                ELSE 'Out of Stock'
-            END AS "Status",
-            i.last_updated AS "Last Verified"
-        FROM inventory i
-        JOIN pharmacies p ON i.pharmacy_id = p.id
-        ORDER BY i.medicine_name ASC, p.name ASC;
-    """
+        try:
+            import mock_db
+            mock_db.init_db()
+        except Exception:
+            return pd.DataFrame()
 
     try:
         with closing(sqlite3.connect(db_path)) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='medicines'")
+            has_medicines = cursor.fetchone()[0] > 0
+
+            if has_medicines:
+                query = """
+                    SELECT
+                        p.name AS "Pharmacy",
+                        p.locality AS "Locality",
+                        m.brand_name AS "Medicine Name",
+                        m.generic_name AS "Salt Formulation",
+                        CASE
+                            WHEN i.stock_status = 'IN_STOCK' THEN 'In Stock'
+                            WHEN i.stock_status = 'LOW_STOCK' THEN 'Low Stock'
+                            ELSE 'Out of Stock'
+                        END AS "Status",
+                        coalesce(i.last_confirmed_at, i.updated_at, i.created_at) AS "Last Verified"
+                    FROM inventory i
+                    JOIN pharmacies p ON i.pharmacy_id = p.id
+                    JOIN medicines m ON i.medicine_id = m.id
+                    ORDER BY m.brand_name ASC, p.name ASC;
+                """
+            else:
+                query = """
+                    SELECT
+                        p.name AS "Pharmacy",
+                        p.locality AS "Locality",
+                        i.medicine_name AS "Medicine Name",
+                        i.salt AS "Salt Formulation",
+                        CASE
+                            WHEN i.is_available = 1 THEN 'In Stock'
+                            ELSE 'Out of Stock'
+                        END AS "Status",
+                        i.last_updated AS "Last Verified"
+                    FROM inventory i
+                    JOIN pharmacies p ON i.pharmacy_id = p.id
+                    ORDER BY i.medicine_name ASC, p.name ASC;
+                """
             return pd.read_sql_query(query, conn)
     except (sqlite3.Error, pd.errors.DatabaseError) as exc:
         st.error(f"Database read error: {exc}")

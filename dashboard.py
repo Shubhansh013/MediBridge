@@ -47,21 +47,48 @@ st.sidebar.info(
 # Fetch Data
 def get_live_data():
     if not os.path.exists(DB_PATH):
-        return pd.DataFrame()
+        try:
+            import mock_db
+            mock_db.init_db()
+        except Exception:
+            return pd.DataFrame()
 
     conn = sqlite3.connect(DB_PATH)
-    query = """
-        SELECT
-            p.name AS "Pharmacy",
-            p.locality AS "Locality",
-            i.medicine_name AS "Medicine",
-            i.salt AS "Salt Formulation",
-            CASE WHEN i.is_available = 1 THEN '🟢 IN STOCK' ELSE '🔴 OUT OF STOCK' END AS "Live Status",
-            i.last_updated AS "Last Verified"
-        FROM inventory i
-        JOIN pharmacies p ON i.pharmacy_id = p.id
-        ORDER BY i.medicine_name ASC, p.name ASC;
-    """
+    cursor = conn.cursor()
+    cursor.execute("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='medicines'")
+    has_medicines = cursor.fetchone()[0] > 0
+
+    if has_medicines:
+        query = """
+            SELECT
+                p.name AS "Pharmacy",
+                p.locality AS "Locality",
+                m.brand_name AS "Medicine",
+                m.generic_name AS "Salt Formulation",
+                CASE
+                    WHEN i.stock_status = 'IN_STOCK' THEN '🟢 IN STOCK'
+                    WHEN i.stock_status = 'LOW_STOCK' THEN '🟡 LOW STOCK'
+                    ELSE '🔴 OUT OF STOCK'
+                END AS "Live Status",
+                coalesce(i.last_confirmed_at, i.updated_at, i.created_at) AS "Last Verified"
+            FROM inventory i
+            JOIN pharmacies p ON i.pharmacy_id = p.id
+            JOIN medicines m ON i.medicine_id = m.id
+            ORDER BY m.brand_name ASC, p.name ASC;
+        """
+    else:
+        query = """
+            SELECT
+                p.name AS "Pharmacy",
+                p.locality AS "Locality",
+                i.medicine_name AS "Medicine",
+                i.salt AS "Salt Formulation",
+                CASE WHEN i.is_available = 1 THEN '🟢 IN STOCK' ELSE '🔴 OUT OF STOCK' END AS "Live Status",
+                i.last_updated AS "Last Verified"
+            FROM inventory i
+            JOIN pharmacies p ON i.pharmacy_id = p.id
+            ORDER BY i.medicine_name ASC, p.name ASC;
+        """
     df = pd.read_sql_query(query, conn)
     conn.close()
     return df

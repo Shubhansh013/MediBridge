@@ -259,7 +259,7 @@ def process_stock_message(
 
         # Check strength: must come from message or catalogue
         resolved_strength = item.strength or (matched_med.strength if matched_med else None)
-        resolved_form = item.dosage_form or (matched_med.form if matched_med else None)
+        resolved_form = (matched_med.form if matched_med and matched_med.form else item.dosage_form)
 
         if not resolved_strength:
             # Strength missing in both message and catalogue: do NOT fabricate

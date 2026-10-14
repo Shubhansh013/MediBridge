@@ -27,6 +27,9 @@ from medibridge_db.models import (  # noqa: F401
 
 
 def main():
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
     parser = argparse.ArgumentParser(description="Initialize MediBridge database")
     parser.add_argument(
         "--db-url",
@@ -69,14 +72,14 @@ def main():
 
     # Reset if requested
     if args.reset:
-        print("\n⚠️  Dropping all tables...")
+        print("\n[RESET] Dropping all tables...")
         Base.metadata.drop_all(bind=engine)
-        print("✓ All tables dropped")
+        print("[OK] All tables dropped")
 
     # Create tables
     print("\nCreating tables...")
     Base.metadata.create_all(bind=engine)
-    print("✓ Tables created")
+    print("[OK] Tables created")
 
     # Seed data
     if not args.no_seed:
@@ -87,20 +90,21 @@ def main():
         session = SessionLocal()
         try:
             counts = seed_database(session)
+            session.commit()
 
             if "note" in counts:
-                print(f"✓ {counts['note']}")
+                print(f"[OK] {counts['note']}")
             else:
-                print("✓ Seed completed")
+                print("[OK] Seed completed")
                 print("\nRow counts:")
                 for table, count in sorted(counts.items()):
                     print(f"  {table:25} {count:4}")
         finally:
             session.close()
     else:
-        print("\n⊘ Skipping seed (--no-seed)")
+        print("\n[INFO] Skipping seed (--no-seed)")
 
-    print("\n✅ Database initialization complete")
+    print("\n[OK] Database initialization complete")
 
 
 if __name__ == "__main__":
