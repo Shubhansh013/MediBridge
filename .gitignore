@@ -42,3 +42,11 @@ Desktop.ini
 
 # Distribution and packaging
 *.egg-info/
+
+# Agent memory and assistant scratch files
+memory/
+.claude/
+
+# Temporary screenshots and media
+*Screenshot*
+docs/*.png

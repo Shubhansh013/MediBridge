@@ -26,6 +26,25 @@ def test_medicine_search(client):
     assert any("Dolo" in item["brand_name"] for item in items)
 
 
+def test_paracetamol_search(client):
+    """Verify searching generic Paracetamol returns all 8 paracetamol-containing medicines."""
+    response = client.get("/api/medicines/search", params={"q": "paracetamol"})
+    assert response.status_code == 200
+    items = response.json()
+    assert len(items) == 8
+    for item in items:
+        assert "paracetamol" in item["generic_name"].lower()
+
+
+def test_list_all_medicines(client):
+    """Verify listing all catalogue medicines returns all 25 records with complete fields."""
+    response = client.get("/api/medicines/")
+    assert response.status_code == 200
+    items = response.json()
+    assert len(items) == 25
+    assert all("id" in item and "brand_name" in item and "form" in item for item in items)
+
+
 def test_medicine_details_and_substitutes(client):
     response = client.get("/api/medicines/1")
     assert response.status_code == 200
