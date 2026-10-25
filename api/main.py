@@ -304,6 +304,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ── Mount Static Mobile Application (Google Stitch Design) ──────────────────
+# Serves the mobile web app at /app for zero-setup browser preview on mobile/desktop.
+# The / mount is intentionally omitted to avoid route conflicts with API endpoints.
+try:
+    from fastapi.staticfiles import StaticFiles
+    app.mount("/app", StaticFiles(directory="static", html=True), name="static-app")
+except Exception:
+    # Static files mount failure is non-fatal; app continues without UI serving
+    pass
+
 
 # ── Root & Health ───────────────────────────────────────────────────────────
 
@@ -344,6 +354,23 @@ async def search_medicines(
             aliases=item.medicine.aliases,
         )
         for item in results
+    ]
+@app.get("/api/medicines/", response_model=List[MedicineSearchResult], tags=["medicines"])
+async def list_medicines():
+    """List all available medicines in the catalogue."""
+    adapter = get_adapter()
+    medicines = adapter.search_medicines("", limit=500)
+    return [
+        MedicineSearchResult(
+            id=medicine.id,
+            brand_name=medicine.brand_name,
+            generic_name=medicine.generic_name,
+            strength=medicine.strength,
+            form=medicine.form,
+            is_schedule_h=medicine.is_schedule_h,
+            aliases=medicine.aliases,
+        )
+        for medicine in medicines
     ]
 
 

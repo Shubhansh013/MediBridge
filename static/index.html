@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>MediBridge Mobile</title>
+  <link rel="stylesheet" href="/app/styles.css">
+</head>
+<body>
+  <div class="mobile-container">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="header-top">
+        <div class="brand-badge">
+          <div class="brand-icon">⚕</div>
+          <span>MediBridge</span>
+        </div>
+        <div class="role-switcher">
+          <button id="btn-role-patient" class="role-btn active" onclick="switchRole('patient')">Patient</button>
+          <button id="btn-role-chemist" class="role-btn" onclick="switchRole('chemist')">Chemist</button>
+        </div>
+      </div>
+      <!-- Chemist Store Context Bar (Visible only in Chemist Mode) -->
+      <div id="chemist-context-bar" class="context-bar" style="display: none;">
+        <span>Active Pharmacy:</span>
+        <select id="pharmacy-selector" class="pharmacy-select" onchange="onPharmacyChange()">
+          <option value="" disabled selected>Loading stores...</option>
+        </select>
+      </div>
+    </header>
+
+    <!-- Toast Notification Container -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <!-- Main Content Area -->
+    <main class="main-content">
+      <!-- ================= PATIENT VIEWS ================= -->
+
+      <!-- Patient View 1: Medicine Search & Discovery -->
+      <section id="view-search" class="view-section active">
+        <h2 class="section-title">Medicine Availability</h2>
+        <p class="section-subtitle">Search real-time stock across verified local pharmacies</p>
+
+        <div class="search-box-wrapper">
+          <svg class="search-icon-svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+          <input type="text" id="medicine-search-input" class="search-input" placeholder="Search by brand, salt, or alias..." autocomplete="off">
+          <button id="btn-clear-search" class="clear-search-btn" onclick="clearMedicineSearch()">×</button>
+        </div>
+
+        <!-- Quick filter chips -->
+        <div class="chips-scroll">
+          <button class="chip" onclick="quickFilter('')">All</button>
+          <button class="chip" onclick="quickFilter('Dolo')">Dolo 650</button>
+          <button class="chip" onclick="quickFilter('Paracetamol')">Paracetamol</button>
+          <button class="chip" onclick="quickFilter('Combiflam')">Combiflam</button>
+          <button class="chip" onclick="quickFilter('Augmentin')">Augmentin</button>
+          <button class="chip" onclick="quickFilter('Azithromycin')">Azithromycin</button>
+        </div>
+
+        <!-- Results List -->
+        <div id="search-results-list">
+          <div class="empty-state">
+            <div class="empty-icon">🔍</div>
+            <p>Type a medicine brand or generic composition above to search catalogue.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Patient View 2: Nearby Pharmacies -->
+      <section id="view-pharmacies" class="view-section">
+        <h2 class="section-title">Nearby Verified Pharmacies</h2>
+        <p class="section-subtitle">Pharmacies offering verified medicine inventory</p>
+
+        <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+          <button class="btn btn-secondary" onclick="useCurrentLocation()" style="flex: 1;">
+            📍 Use Current Location
+          </button>
+          <select id="radius-select" class="btn btn-secondary" onchange="loadNearbyPharmacies()">
+            <option value="5">5 km radius</option>
+            <option value="10" selected>10 km radius</option>
+            <option value="25">25 km radius</option>
+          </select>
+        </div>
+
+        <div id="nearby-pharmacies-list">
+          <div class="empty-state">
+            <div class="spinner"></div>
+            <p style="margin-top: 10px;">Finding nearby verified pharmacies...</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Patient View 3: Information & Safety -->
+      <section id="view-info" class="view-section">
+        <h2 class="section-title">Verified Medicine Platform</h2>
+        <p class="section-subtitle">Architecture-aware healthcare connectivity</p>
+
+        <div class="card">
+          <div class="card-title" style="margin-bottom: 8px;">🛡️ Safe & Regulated</div>
+          <p style="font-size: 0.85rem; color: var(--slate-600); margin-bottom: 10px;">
+            Schedule H prescription drugs are strictly flagged for licensed pharmacist verification. No stock update occurs automatically without human confirmation.
+          </p>
+          <div class="badge badge-schedule-h">Schedule H Compliant</div>
+        </div>
+
+        <div class="card">
+          <div class="card-title" style="margin-bottom: 8px;">⏱️ Freshness & Transparency</div>
+          <p style="font-size: 0.85rem; color: var(--slate-600);">
+            Inventory unconfirmed for more than 24 hours is visibly flagged as stale to prevent patient inconvenience.
+          </p>
+        </div>
+      </section>
+
+      <!-- ================= CHEMIST VIEWS ================= -->
+
+      <!-- Chemist View 1: Quick Natural Language Stock Update -->
+      <section id="view-chemist-update" class="view-section">
+        <h2 class="section-title">Chemist Stock Update</h2>
+        <p class="section-subtitle">Type or speak updates in English, Hindi, or Hinglish</p>
+
+        <div class="nlp-box">
+          <textarea id="nlp-input" class="nlp-textarea" placeholder="e.g., Dolo 650 20 strips available, or Paracetamol khatam ho gaya..."></textarea>
+          <div class="nlp-actions">
+            <span class="nlp-hint">Parses strength vs quantity separately</span>
+            <button id="btn-submit-nlp" class="btn btn-primary" onclick="submitStockProposal()">
+              Process Update
+            </button>
+          </div>
+        </div>
+
+        <!-- Quick Template Chips -->
+        <div class="chips-scroll" style="margin-bottom: 16px;">
+          <button class="chip" onclick="fillNlp('Dolo 650 20 strips available')">Dolo 650 20 strips</button>
+          <button class="chip" onclick="fillNlp('Combiflam 50 strips in stock')">Combiflam 50 strips</button>
+          <button class="chip" onclick="fillNlp('Augmentin 625 5 strips low stock')">Augmentin 625 5 strips</button>
+          <button class="chip" onclick="fillNlp('Crocin 650 out of stock')">Crocin 650 khatam</button>
+        </div>
+
+        <!-- Result of Latest Update -->
+        <div id="nlp-update-result"></div>
+      </section>
+
+      <!-- Chemist View 2: Pending Proposals Review Queue -->
+      <section id="view-chemist-proposals" class="view-section">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+          <h2 class="section-title" style="margin-bottom: 0;">Pending Proposals</h2>
+          <button class="btn btn-secondary" onclick="loadPendingProposals()" style="padding: 4px 10px; font-size: 0.75rem;">↻ Refresh</button>
+        </div>
+        <p class="section-subtitle">Human-in-the-loop: review AI interpretations before applying to live stock</p>
+
+        <div id="proposals-list">
+          <div class="empty-state">
+            <div class="empty-icon">📋</div>
+            <p>No pending stock proposals awaiting confirmation.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Chemist View 3: Store Inventory -->
+      <section id="view-chemist-inventory" class="view-section">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+          <h2 class="section-title" style="margin-bottom: 0;">Store Inventory</h2>
+          <button class="btn btn-secondary" onclick="loadPharmacyInventory()" style="padding: 4px 10px; font-size: 0.75rem;">↻ Refresh</button>
+        </div>
+        <p class="section-subtitle">Real-time stock levels with 24-hour freshness indicators</p>
+
+        <div class="search-box-wrapper" style="margin-bottom: 10px;">
+          <input type="text" id="inventory-filter-input" class="search-input" placeholder="Filter store stock..." style="padding-left: 14px;" oninput="filterInventoryList()">
+        </div>
+
+        <div id="inventory-list">
+          <div class="empty-state">
+            <div class="spinner"></div>
+            <p style="margin-top: 10px;">Loading store inventory...</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Chemist View 4: Store Audit History & Undo -->
+      <section id="view-chemist-history" class="view-section">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+          <h2 class="section-title" style="margin-bottom: 0;">Audit History & Undo</h2>
+          <button class="btn btn-secondary" onclick="loadPharmacyHistory()" style="padding: 4px 10px; font-size: 0.75rem;">↻ Refresh</button>
+        </div>
+        <p class="section-subtitle">Append-only audit trail with single-step rollback</p>
+
+        <div id="history-list">
+          <div class="empty-state">
+            <div class="spinner"></div>
+            <p style="margin-top: 10px;">Loading audit trail...</p>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Bottom Navigation Bar -->
+    <nav class="bottom-nav">
+      <!-- Patient Nav Items -->
+      <button id="nav-btn-search" class="nav-item active patient-nav" onclick="navigateTo('view-search')">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8"></circle>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+        </svg>
+        <span>Search</span>
+      </button>
+
+      <button id="nav-btn-pharmacies" class="nav-item patient-nav" onclick="navigateTo('view-pharmacies')">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+          <circle cx="12" cy="10" r="3"></circle>
+        </svg>
+        <span>Nearby</span>
+      </button>
+
+      <button id="nav-btn-info" class="nav-item patient-nav" onclick="navigateTo('view-info')">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="12" y1="16" x2="12" y2="12"></line>
+          <line x1="12" y1="8" x2="12.01" y2="8"></line>
+        </svg>
+        <span>About</span>
+      </button>
+
+      <!-- Chemist Nav Items -->
+      <button id="nav-btn-update" class="nav-item chemist-nav" style="display: none;" onclick="navigateTo('view-chemist-update')">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+          <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+        </svg>
+        <span>Update</span>
+      </button>
+
+      <button id="nav-btn-proposals" class="nav-item chemist-nav" style="display: none;" onclick="navigateTo('view-chemist-proposals')">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+          <polyline points="14 2 14 8 20 8"></polyline>
+          <line x1="16" y1="13" x2="8" y2="13"></line>
+          <line x1="16" y1="17" x2="8" y2="17"></line>
+          <polyline points="10 9 9 9 8 9"></polyline>
+        </svg>
+        <span>Proposals</span>
+        <span id="nav-proposal-badge" class="nav-badge">0</span>
+      </button>
+
+      <button id="nav-btn-inventory" class="nav-item chemist-nav" style="display: none;" onclick="navigateTo('view-chemist-inventory')">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect>
+          <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path>
+        </svg>
+        <span>Inventory</span>
+      </button>
+
+      <button id="nav-btn-history" class="nav-item chemist-nav" style="display: none;" onclick="navigateTo('view-chemist-history')">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"></circle>
+          <polyline points="12 6 12 12 16 14"></polyline>
+        </svg>
+        <span>History</span>
+      </button>
+    </nav>
+
+    <!-- Substitutes Bottom Sheet Modal -->
+    <div id="substitutes-modal" class="modal-overlay" onclick="closeSubstitutesModal(event)">
+      <div class="modal-sheet" onclick="event.stopPropagation()">
+        <div class="modal-header">
+          <div>
+            <div id="modal-sub-brand" class="card-title">Medicine Substitutes</div>
+            <div id="modal-sub-salt" class="card-meta">Generic alternatives</div>
+          </div>
+          <button class="modal-close-btn" onclick="closeSubstitutesModal()">×</button>
+        </div>
+        <div id="substitutes-modal-body">
+          <div class="spinner"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/app/app.js"></script>
+</body>
+</html>
