@@ -182,7 +182,7 @@ def handle_undo_action(pharmacy_id: int, user_id: int) -> Tuple[bool, str]:
     """Undoes the latest stock change for the pharmacy."""
     adapter = get_adapter()
     try:
-        histories = adapter.get_pharmacy_history(pharmacy_id=pharmacy_id, limit=50)
+        histories = adapter.get_pharmacy_history(pharmacy_id=pharmacy_id, limit=500)
         if not histories:
             return False, "?? No stock update history found for this pharmacy to undo."
 

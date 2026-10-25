@@ -1,6 +1,11 @@
 """Services subpackage for MediBridge business logic and AI parsing."""
 
-from medibridge.services.ai_parser import parse_stock_message
+from medibridge.services.ai_parser import (
+    parse_stock_message,
+    parse_stock_message_deterministic,
+    parse_with_gemini,
+    parse_with_groq,
+)
 from medibridge.services.proposal_adapter import (
     AdaptedProposalResult,
     ParsedProposalInput,
@@ -48,6 +53,9 @@ from medibridge.services.catalogue_service import (
 
 __all__ = [
     "parse_stock_message",
+    "parse_stock_message_deterministic",
+    "parse_with_gemini",
+    "parse_with_groq",
     "ParsedProposalInput",
     "UnresolvedProposalItem",
     "AdaptedProposalResult",
