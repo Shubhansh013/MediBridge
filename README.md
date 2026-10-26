@@ -190,9 +190,9 @@ Medicine data demands rigorous safety standards. MediBridge enforces non-negotia
 * **One-Click Audit & Undo:** Complete history of stock movements with immediate single-step undo.
 
 ### 3. Client Interfaces
-* **Mobile Web App (`/app`):** Built with Google Stitch design principles (responsive, mobile ergonomics, clean typography, bottom navigation, instant role switching).
-* **Telegram Bot (`bot.py`):** Interactive conversational bot supporting patient search and chemist inventory management.
-* **Streamlit Dashboard (`dashboard.py`):** Administrative and chemist command center for multi-pharmacy inventory and audit exploration.
+* **Mobile Web App (`/app/`):** Primary client built with Google Stitch design principles (responsive, mobile ergonomics, clean typography, bottom navigation, instant role switching).
+* **Legacy ERP Dashboard (`medibridge_dashboard.py`):** Optional legacy prototype for tabular multi-pharmacy stock exploration.
+* **Legacy Prototypes (`bot.py`, `dashboard.py`):** Deprecated and disabled prototype scripts preserved for archival reference.
 
 ---
 
@@ -266,7 +266,8 @@ medidoc/
 │   └── test_ui_integration.py       # Mobile frontend integration tests
 ├── bot.py                           # Telegram Bot Interface (Deprecated & Disabled)
 ├── dashboard.py                     # Legacy Demo Dashboard (Deprecated & Disabled)
-├── medibridge_dashboard.py          # Streamlit ERP Dashboard
+├── medibridge_dashboard.py          # Streamlit ERP Dashboard (Legacy Prototype)
+├── run.py                           # Development server runner (Optional convenience)
 ├── medibridge.db                    # SQLite Database (WAL mode)
 ├── pyproject.toml                   # Project configuration & pytest settings
 ├── requirements.txt                 # Python dependencies
@@ -350,26 +351,34 @@ TELEGRAM_BOT_TOKEN=your_telegram_bot_token_here
 
 ## 🏃 Running the Application
 
-### Option A: Run the FastAPI Server & Mobile Web App (Recommended)
+### Local Development (Primary Web App)
 
-Start the REST API Gateway:
-
-```bash
-python -m uvicorn api.main:app --host 127.0.0.1 --port 8000 --reload
-```
-
-* **Interactive Mobile Web Client:** Open [http://127.0.0.1:8000/app](http://127.0.0.1:8000/app) in your desktop browser or mobile emulator.
-* **Interactive OpenAPI Docs (Swagger UI):** Open [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs).
-* **System Health Endpoint:** Open [http://127.0.0.1:8000/api/health](http://127.0.0.1:8000/api/health).
-
-> [!NOTE]
-> `bot.py` (Telegram bot prototype) and `dashboard.py` (legacy demo dashboard) have been deprecated, commented out, and are no longer used in the project. All active chemist and patient flows are served via the REST API gateway (`/app` and `/api/*`) and `medibridge_dashboard.py`.
-
-### Option C: Run the Streamlit Dashboard
+Start the MediBridge FastAPI server & web application:
 
 ```bash
-streamlit run medibridge_dashboard.py
+python -m uvicorn api.main:app --reload
 ```
+
+*(Alternatively, use the convenience runner: `python run.py`)*
+
+Once running, access the application and services:
+* **Web Application:** [http://127.0.0.1:8000/app/](http://127.0.0.1:8000/app/) *(Google Stitch mobile client for patients & chemists)*
+* **Root (Browser Redirect):** [http://127.0.0.1:8000/](http://127.0.0.1:8000/) *(Automatically redirects web browsers to `/app/`)*
+* **Interactive API Documentation:** [http://127.0.0.1:8000/api/docs](http://127.0.0.1:8000/api/docs) *(Swagger UI)*
+* **System Health Check:** [http://127.0.0.1:8000/api/health](http://127.0.0.1:8000/api/health)
+* **Live Production App:** [https://medidoc-sigma.vercel.app/app/](https://medidoc-sigma.vercel.app/app/)
+
+### Legacy Prototype Tools (Optional)
+
+The following prototypes are kept for archival and demonstration reference, but are **not** the primary application:
+
+* **Legacy Streamlit ERP (`medibridge_dashboard.py`):**
+  ```bash
+  streamlit run medibridge_dashboard.py
+  ```
+  *(Note: This is an older prototype. All active chemist and patient workflows are served via the Web App at `/app/`)*
+* **Deprecated Prototypes (`bot.py`, `dashboard.py`):**
+  These legacy entry points have been deprecated, disabled, and commented out. All active functionality is served via the REST API and modern web client.
 
 ---
 

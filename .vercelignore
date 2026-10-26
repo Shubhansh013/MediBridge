@@ -16,6 +16,7 @@ __pycache__/
 tests/
 .pytest_cache/
 test_api_check.py
+run.py
 
 # SQLite temporary WAL/SHM files (main medibridge.db is included for seed data)
 *.db-shm

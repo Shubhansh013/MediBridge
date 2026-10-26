@@ -171,3 +171,47 @@ def test_pharmacist_substitution_approval(client):
     )
     assert response.status_code == 200
     assert response.json()["success"] is True
+
+
+def test_root_endpoint_json_for_api_clients(client):
+    """Verify programmatic / API clients requesting GET / receive service metadata JSON."""
+    response = client.get("/")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["service"] == "MediBridge REST API Gateway"
+    assert data["status"] == "online"
+    assert data["docs"] == "/api/docs"
+    assert data["app"] == "/app/"
+
+
+def test_root_endpoint_browser_redirect_to_app(client):
+    """Verify web browsers requesting GET / (Accept text/html) are redirected to /app/."""
+    response = client.get("/", headers={"Accept": "text/html,application/xhtml+xml"}, follow_redirects=False)
+    assert response.status_code == 307
+    assert response.headers["location"] == "/app/"
+
+
+def test_app_serves_web_interface(client):
+    """Verify /app/ serves the Stitch mobile web client with styles and scripts."""
+    response = client.get("/app/")
+    assert response.status_code == 200
+    assert "MediBridge" in response.text
+    assert "/app/styles.css" in response.text
+    assert "/app/app.js" in response.text
+
+
+def test_api_docs_accessible(client):
+    """Verify OpenAPI Swagger documentation is accessible at /api/docs."""
+    response = client.get("/api/docs")
+    assert response.status_code == 200
+    assert "swagger-ui" in response.text.lower()
+
+
+def test_legacy_dashboard_has_warning_banner():
+    """Verify medibridge_dashboard.py contains the legacy prototype notice directing users to /app/."""
+    from pathlib import Path
+    dashboard_path = Path(__file__).resolve().parent.parent / "medibridge_dashboard.py"
+    content = dashboard_path.read_text(encoding="utf-8")
+    assert "st.warning" in content
+    assert "Legacy Prototype Notice" in content
+    assert "/app/" in content

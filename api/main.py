@@ -28,8 +28,9 @@ SRC_DIR = PROJECT_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from fastapi import Depends, FastAPI, HTTPException, Query, status
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 import sqlalchemy as sa
 from sqlalchemy import select
@@ -330,12 +331,23 @@ except Exception:
 # ── Root & Health ───────────────────────────────────────────────────────────
 
 @app.get("/", include_in_schema=False)
-async def root():
+async def root(request: Request):
+    """Root endpoint.
+
+    Redirects web browsers (Accept containing text/html) to the primary
+    mobile web application at /app/. Programmatic and API clients receive
+    JSON service metadata.
+    """
+    accept = request.headers.get("accept", "")
+    if "text/html" in accept:
+        return RedirectResponse(url="/app/", status_code=status.HTTP_307_TEMPORARY_REDIRECT)
+
     return {
         "service": "MediBridge REST API Gateway",
         "status": "online",
         "version": "1.0.0",
         "docs": "/api/docs",
+        "app": "/app/",
     }
 
 

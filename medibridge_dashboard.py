@@ -431,7 +431,8 @@ def reset_filters():
 
 with st.sidebar:
     st.markdown("## 💊 MediBridge")
-    st.caption("PHARMACY INVENTORY ERP")
+    st.caption("PHARMACY INVENTORY ERP (Legacy Prototype)")
+    st.info("👉 **Primary App**: [http://127.0.0.1:8000/app/](http://127.0.0.1:8000/app/)")
     st.markdown("---")
 
     st.markdown("### System controls")
@@ -478,6 +479,14 @@ out_stock_count = int((df["Status"] == "Out of Stock").sum()) if not df.empty el
 # ---------------------------------------------------------------------------
 # Hero header
 # ---------------------------------------------------------------------------
+st.warning(
+    "⚠️ **Legacy Prototype Notice**: This Streamlit dashboard is an older prototype. "
+    "The primary MediBridge application for patients and chemists is the new Web App at "
+    "[http://127.0.0.1:8000/app/](http://127.0.0.1:8000/app/) (Local) or "
+    "[https://medidoc-sigma.vercel.app/app/](https://medidoc-sigma.vercel.app/app/) (Production).\n\n"
+    "👉 To launch the primary web application, run: `python -m uvicorn api.main:app --reload`"
+)
+
 db_status = "Database connected" if db_exists else "Database not initialized"
 st.markdown(
     f"""
