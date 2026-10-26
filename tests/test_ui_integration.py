@@ -6,7 +6,7 @@ import os
 import sqlite3
 import unittest
 
-import bot
+# import bot  # Disabled: bot.py is commented out and no longer used in project
 import mock_db
 from medibridge.schemas.stock import StockActionEnum
 from medibridge.services.proposal_service import ProposalServiceStatus
@@ -144,76 +144,16 @@ class TestUIIntegration(unittest.TestCase):
         )
         conn.close()
 
-    def test_bot_chemist_message_proposal_creation(self):
-        """Verify bot correctly translates chemist messages into pending StockProposals."""
-        user_id, pharmacy_id, pharmacy_name = bot.resolve_chemist_context(200001)
-        self.assertEqual(pharmacy_id, 1)
-
-        result, err = bot.handle_chemist_stock_text(
-            "Calpol 650 50 strips available", user_id, pharmacy_id, "tg_test_calpol"
-        )
-        self.assertIsNone(err)
-        self.assertIsNotNone(result)
-        self.assertEqual(result.status, ProposalServiceStatus.SUCCESS)
-        self.assertEqual(len(result.created_proposals), 1)
-
-        proposal = result.created_proposals[0]
-        self.assertEqual(proposal.brand_name, "Calpol 650")
-        self.assertEqual(proposal.parsed_quantity, 50)
-        self.assertEqual(proposal.parsed_intent, StockActionEnum.IN_STOCK)
-        self.assertEqual(proposal.status, ProposalStatus.pending)
-
-    def test_bot_proposal_confirmation_and_undo(self):
-        """Verify confirming a proposal updates inventory and undo reverses it safely."""
-        user_id, pharmacy_id, _ = bot.resolve_chemist_context(200001)
-
-        # 1. Create proposal
-        result, _ = bot.handle_chemist_stock_text(
-            "Augmentin 625 15 strips available", user_id, pharmacy_id, "tg_test_aug"
-        )
-        self.assertEqual(result.status, ProposalServiceStatus.SUCCESS)
-        prop = result.created_proposals[0]
-
-        # 2. Confirm proposal
-        ok, msg, conf = bot.handle_proposal_confirmation(prop.id, user_id, pharmacy_id)
-        self.assertTrue(ok)
-        self.assertIn("Database Committed & Audited!", msg)
-        self.assertEqual(conf.updated_inventory.stock_status, StockStatus.in_stock)
-        self.assertEqual(conf.updated_inventory.quantity, 15)
-
-        # 3. Undo update
-        ok_undo, undo_msg = bot.handle_undo_action(pharmacy_id, user_id)
-        self.assertTrue(ok_undo)
-        self.assertIn("Stock Update Reversed!", undo_msg)
-
-    def test_bot_proposal_rejection(self):
-        """Verify rejecting a proposal marks it rejected without altering inventory."""
-        user_id, pharmacy_id, _ = bot.resolve_chemist_context(200001)
-
-        result, _ = bot.handle_chemist_stock_text(
-            "Crocin 650 10 strips available", user_id, pharmacy_id, "tg_test_crocin"
-        )
-        self.assertEqual(result.status, ProposalServiceStatus.SUCCESS)
-        prop = result.created_proposals[0]
-
-        ok, msg = bot.handle_proposal_rejection(prop.id, user_id, pharmacy_id)
-        self.assertTrue(ok)
-        self.assertIn("cancelled", msg)
-
-        # Verify proposal status in DB is rejected
-        adapter = bot.get_adapter()
-        db_prop = adapter.get_proposal_by_id(prop.id)
-        self.assertEqual(db_prop.status, ProposalStatus.rejected)
-
-    def test_bot_unauthorized_user_rejection(self):
-        """Verify unauthorized user cannot process stock messages."""
-        # User 99999 is not linked to pharmacy 1
-        result, err = bot.handle_chemist_stock_text(
-            "Dolo 650 10 strips available", 99999, 1, "tg_unauth"
-        )
-        self.assertIsNone(err)
-        self.assertEqual(result.status, ProposalServiceStatus.UNAUTHORIZED)
-        self.assertEqual(len(result.created_proposals), 0)
+    # Legacy bot integration tests disabled because bot.py is commented out
+    # def test_bot_chemist_message_proposal_creation(self):
+    #     user_id, pharmacy_id, pharmacy_name = bot.resolve_chemist_context(200001)
+    #     ...
+    # def test_bot_proposal_confirmation_and_undo(self):
+    #     ...
+    # def test_bot_proposal_rejection(self):
+    #     ...
+    # def test_bot_unauthorized_user_rejection(self):
+    #     ...
 
 
 if __name__ == "__main__":

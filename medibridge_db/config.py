@@ -6,6 +6,7 @@ with a default SQLite file in the project root.
 """
 
 import os
+import tempfile
 from pathlib import Path
 
 
@@ -23,6 +24,17 @@ def get_database_url() -> str:
     # Default: SQLite file in project root
     project_root = Path(__file__).parent.parent
     db_path = project_root / "medibridge.db"
+
+    # Serverless runtime (e.g. Vercel / AWS Lambda) has a read-only filesystem except /tmp
+    if os.getenv("VERCEL") or os.getenv("AWS_LAMBDA_FUNCTION_NAME"):
+        tmp_dir = Path(tempfile.gettempdir())
+        tmp_db = tmp_dir / "medibridge.db"
+        if not tmp_db.exists():
+            import shutil
+            if db_path.exists():
+                shutil.copy2(db_path, tmp_db)
+        return f"sqlite:///{tmp_db}"
+
     return f"sqlite:///{db_path}"
 
 

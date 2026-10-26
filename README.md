@@ -264,8 +264,9 @@ medidoc/
 │   ├── test_seed.py                 # Initial seed verification tests
 │   ├── test_sqlite_repository.py    # Repository pattern tests
 │   └── test_ui_integration.py       # Mobile frontend integration tests
-├── bot.py                           # Telegram Bot Interface
-├── dashboard.py                     # Streamlit Operational Dashboard
+├── bot.py                           # Telegram Bot Interface (Deprecated & Disabled)
+├── dashboard.py                     # Legacy Demo Dashboard (Deprecated & Disabled)
+├── medibridge_dashboard.py          # Streamlit ERP Dashboard
 ├── medibridge.db                    # SQLite Database (WAL mode)
 ├── pyproject.toml                   # Project configuration & pytest settings
 ├── requirements.txt                 # Python dependencies
@@ -370,7 +371,7 @@ python bot.py
 ### Option C: Run the Streamlit Dashboard
 
 ```bash
-streamlit run dashboard.py
+streamlit run medibridge_dashboard.py
 ```
 
 ---

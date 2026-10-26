@@ -50,3 +50,5 @@ memory/
 # Temporary screenshots and media
 *Screenshot*
 docs/*.png
+
+.vercel

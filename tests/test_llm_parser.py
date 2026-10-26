@@ -304,6 +304,197 @@ class TestLLMParser(unittest.TestCase):
             self.assertEqual(proposal.items[0].medicine_name, "Dolo 650")
             mock_client.post.assert_not_called()
 
+    def test_schema_violation_falls_back(self):
+        """Test 12: LLM returns valid JSON but a schema violation (bad status enum)."""
+        mock_gemini_response = {
+            "candidates": [
+                {
+                    "content": {
+                        "parts": [
+                            {
+                                "text": json.dumps({
+                                    "items": [
+                                        {
+                                            "medicine_name": "Dolo 650",
+                                            "status": "ALMOST_IN_STOCK",
+                                            "quantity": 25,
+                                        }
+                                    ]
+                                })
+                            }
+                        ]
+                    }
+                }
+            ]
+        }
+        mock_client = MagicMock()
+        mock_client.post.return_value = MockHTTPResponse(200, mock_gemini_response)
+
+        proposal = parse_stock_message(
+            "Dolo 650 20 strips available",
+            api_key="mock-api-key-test",
+            http_client=mock_client,
+        )
+        self.assertIsNotNone(proposal)
+        assert proposal is not None
+        # Deterministic fallback produced the safe result
+        self.assertEqual(proposal.items[0].medicine_name, "Dolo 650")
+        self.assertEqual(proposal.items[0].quantity, 20)
+
+    def test_empty_items_array_falls_back(self):
+        """Test 13: LLM returns {"items": []} (conversational) — deterministic fallback applies."""
+        mock_gemini_response = {
+            "candidates": [
+                {
+                    "content": {
+                        "parts": [
+                            {"text": json.dumps({"items": [], "notes": "conversational"})}
+                        ]
+                    }
+                }
+            ]
+        }
+        mock_client = MagicMock()
+        mock_client.post.return_value = MockHTTPResponse(200, mock_gemini_response)
+
+        proposal = parse_stock_message(
+            "Dolo 650 20 strips available",
+            api_key="mock-api-key-test",
+            http_client=mock_client,
+        )
+        self.assertIsNotNone(proposal)
+        assert proposal is not None
+        self.assertEqual(proposal.items[0].medicine_name, "Dolo 650")
+
+    def test_configurable_timeout_is_respected(self):
+        """Test 14: An explicit timeout override is passed through to the provider."""
+        mock_client = MagicMock()
+        mock_client.post.return_value = MockHTTPResponse(
+            200,
+            {
+                "candidates": [
+                    {
+                        "content": {
+                            "parts": [
+                                {
+                                    "text": json.dumps({
+                                        "items": [
+                                            {
+                                                "medicine_name": "Dolo 650",
+                                                "status": "IN_STOCK",
+                                                "quantity": 25,
+                                            }
+                                        ]
+                                    })
+                                }
+                            ]
+                        }
+                    }
+                ]
+            },
+        )
+
+        parse_stock_message(
+            "Dolo 650 25 strips available",
+            api_key="mock-api-key-test",
+            timeout=12.5,
+            http_client=mock_client,
+        )
+        _, kwargs = mock_client.post.call_args
+        self.assertEqual(kwargs["timeout"], 12.5)
+
+    def test_env_timeout_override(self):
+        """Test 15: LLM_TIMEOUT env var overrides the default 3.0s timeout."""
+        mock_client = MagicMock()
+        mock_client.post.return_value = MockHTTPResponse(
+            200,
+            {
+                "candidates": [
+                    {
+                        "content": {
+                            "parts": [
+                                {
+                                    "text": json.dumps({
+                                        "items": [
+                                            {
+                                                "medicine_name": "Dolo 650",
+                                                "status": "IN_STOCK",
+                                                "quantity": 25,
+                                            }
+                                        ]
+                                    })
+                                }
+                            ]
+                        }
+                    }
+                ]
+            },
+        )
+
+        with patch.dict("os.environ", {"LLM_TIMEOUT": "8.0"}, clear=True):
+            parse_stock_message(
+                "Dolo 650 25 strips available",
+                api_key="mock-api-key-test",
+                http_client=mock_client,
+            )
+        _, kwargs = mock_client.post.call_args
+        self.assertEqual(kwargs["timeout"], 8.0)
+
+    def test_no_unvalidated_proposal_on_failure(self):
+        """Test 16: A provider exception must never yield an unvalidated proposal."""
+        mock_client = MagicMock()
+        mock_client.post.side_effect = RuntimeError("provider exploded")
+
+        # Even with a malformed/empty message, failure path returns None or a
+        # deterministic fallback — never an unvalidated StockUpdateProposal.
+        proposal = parse_stock_message(
+            "Dolo 650 20 strips available",
+            api_key="mock-api-key-test",
+            http_client=mock_client,
+        )
+        if proposal is not None:
+            # If a fallback produced a proposal, every item must validate.
+            for item in proposal.items:
+                self.assertIsInstance(item.medicine_name, str)
+                self.assertTrue(item.medicine_name.strip())
+                self.assertIn(item.status, ("IN_STOCK", "LOW_STOCK", "OUT_OF_STOCK"))
+                if item.quantity is not None:
+                    self.assertGreaterEqual(item.quantity, 0)
+
+    def test_api_key_not_logged(self):
+        """Test 17: Provider warnings never embed the raw API key."""
+        import logging
+        from medibridge.services import ai_parser
+
+        records = []
+
+        class _Handler(logging.Handler):
+            def emit(self, record):
+                records.append(self.format(record))
+
+        handler = _Handler()
+        handler.setLevel(logging.WARNING)
+        ai_parser.logger.addHandler(handler)
+        ai_parser.logger.setLevel(logging.WARNING)
+
+        try:
+            mock_client = MagicMock()
+            mock_client.post.return_value = MockHTTPResponse(500, {"error": "boom"})
+
+            secret = "gsk_supersecretkey1234567890"
+            parse_stock_message(
+                "Dolo 650 20 strips available",
+                api_key=secret,
+                provider="groq",
+                http_client=mock_client,
+            )
+        finally:
+            ai_parser.logger.removeHandler(handler)
+
+        joined = "\n".join(records)
+        self.assertNotIn(secret, joined)
+        self.assertIn("gsk_...", joined)
+
 
 if __name__ == "__main__":
     unittest.main()

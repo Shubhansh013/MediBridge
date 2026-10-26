@@ -14,9 +14,19 @@ from __future__ import annotations
 
 import math
 import os
+import sys
+from pathlib import Path
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
+
+# Add project root and src/ to sys.path so medibridge and medibridge_db resolve in all environments
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+SRC_DIR = PROJECT_ROOT / "src"
+if str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
 
 from fastapi import Depends, FastAPI, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -309,7 +319,9 @@ app.add_middleware(
 # The / mount is intentionally omitted to avoid route conflicts with API endpoints.
 try:
     from fastapi.staticfiles import StaticFiles
-    app.mount("/app", StaticFiles(directory="static", html=True), name="static-app")
+    _static_dir = PROJECT_ROOT / "static"
+    if _static_dir.exists():
+        app.mount("/app", StaticFiles(directory=str(_static_dir), html=True), name="static-app")
 except Exception:
     # Static files mount failure is non-fatal; app continues without UI serving
     pass
