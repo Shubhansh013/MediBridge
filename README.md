@@ -362,11 +362,8 @@ python -m uvicorn api.main:app --host 127.0.0.1 --port 8000 --reload
 * **Interactive OpenAPI Docs (Swagger UI):** Open [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs).
 * **System Health Endpoint:** Open [http://127.0.0.1:8000/api/health](http://127.0.0.1:8000/api/health).
 
-### Option B: Run the Telegram Bot
-
-```bash
-python bot.py
-```
+> [!NOTE]
+> `bot.py` (Telegram bot prototype) and `dashboard.py` (legacy demo dashboard) have been deprecated, commented out, and are no longer used in the project. All active chemist and patient flows are served via the REST API gateway (`/app` and `/api/*`) and `medibridge_dashboard.py`.
 
 ### Option C: Run the Streamlit Dashboard
 
