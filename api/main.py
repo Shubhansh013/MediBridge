@@ -121,6 +121,20 @@ class PharmacySearchResult(BaseModel):
     distance_km: Optional[float] = None
 
 
+class MedicinePharmacyStock(BaseModel):
+    pharmacy_id: int
+    pharmacy_name: str
+    locality: Optional[str] = None
+    latitude: float
+    longitude: float
+    verification_state: str
+    distance_km: Optional[float] = None
+    stock_status: str
+    quantity: Optional[int] = None
+    last_confirmed_at: Optional[str] = None
+    is_stale: bool = False
+
+
 class InventoryItem(BaseModel):
     id: int
     pharmacy_id: int
@@ -440,6 +454,75 @@ async def get_substitutes(medicine_id: int):
         )
         for s in sub_group.available_substitutes
     ]
+
+
+@app.get("/api/medicines/{medicine_id}/pharmacies", response_model=List[MedicinePharmacyStock], tags=["medicines"])
+async def get_pharmacies_stocking_medicine(
+    medicine_id: int,
+    lat: Optional[float] = Query(None, description="User latitude for distance sorting"),
+    lon: Optional[float] = Query(None, description="User longitude for distance sorting"),
+    db: Session = Depends(get_db),
+):
+    """Retrieve all verified pharmacies that maintain inventory for a specific medicine."""
+    med = ops.get_medicine_by_id(db, medicine_id)
+    if not med:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Medicine ID {medicine_id} not found in catalogue",
+        )
+
+    stmt = (
+        select(Inventory, Pharmacy)
+        .join(Pharmacy, Inventory.pharmacy_id == Pharmacy.id)
+        .where(
+            Inventory.medicine_id == medicine_id,
+            Pharmacy.is_active == True,
+            Pharmacy.verification_state == "verified",
+        )
+    )
+    rows = db.execute(stmt).all()
+    now = datetime.now(timezone.utc)
+    results: List[MedicinePharmacyStock] = []
+
+    for inv, ph in rows:
+        is_stale = False
+        if inv.last_confirmed_at:
+            confirmed_dt = inv.last_confirmed_at
+            if confirmed_dt.tzinfo is None:
+                confirmed_dt = confirmed_dt.replace(tzinfo=timezone.utc)
+            diff_hours = (now - confirmed_dt).total_seconds() / 3600.0
+            is_stale = diff_hours > 24.0
+
+        dist = None
+        if lat is not None and lon is not None and ph.latitude is not None and ph.longitude is not None:
+            dist = round(_haversine_distance(lat, lon, ph.latitude, ph.longitude), 2)
+
+        status_val = inv.stock_status.value if hasattr(inv.stock_status, "value") else str(inv.stock_status)
+        v_state = ph.verification_state.value if hasattr(ph.verification_state, "value") else str(ph.verification_state)
+
+        results.append(
+            MedicinePharmacyStock(
+                pharmacy_id=ph.id,
+                pharmacy_name=ph.name,
+                locality=ph.locality,
+                latitude=ph.latitude,
+                longitude=ph.longitude,
+                verification_state=v_state,
+                distance_km=dist,
+                stock_status=status_val.upper(),
+                quantity=inv.quantity,
+                last_confirmed_at=inv.last_confirmed_at.isoformat() if inv.last_confirmed_at else None,
+                is_stale=is_stale,
+            )
+        )
+
+    def sort_key(item: MedicinePharmacyStock):
+        status_rank = 0 if item.stock_status in ("IN_STOCK", "LOW_STOCK") else 1
+        distance = item.distance_km if item.distance_km is not None else float("inf")
+        return (status_rank, distance)
+
+    results.sort(key=sort_key)
+    return results
 
 
 @app.post("/api/substitutions/approve", tags=["medicines"])
