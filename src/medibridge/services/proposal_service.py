@@ -151,6 +151,9 @@ def process_stock_message(
     repository: StockProposalRepositoryProtocol,
     *,
     source_message_ref: Optional[str] = None,
+    use_llm: bool = True,
+    api_key: Optional[str] = None,
+    http_client: Optional[Any] = None,
 ) -> ProposalServiceResult:
     """Orchestrates authorization, message parsing, catalogue lookup, and proposal creation.
 
@@ -196,7 +199,12 @@ def process_stock_message(
         )
 
     # 3. Parsing message
-    parsed_proposal: Optional[StockUpdateProposal] = parse_stock_message(raw_message)
+    parsed_proposal: Optional[StockUpdateProposal] = parse_stock_message(
+        raw_message,
+        use_llm=use_llm,
+        api_key=api_key,
+        http_client=http_client,
+    )
     if parsed_proposal is None:
         return ProposalServiceResult(
             status=ProposalServiceStatus.UNPARSEABLE,
@@ -257,9 +265,32 @@ def process_stock_message(
                 )
                 continue
 
-        # Check strength: must come from message or catalogue
-        resolved_strength = item.strength or (matched_med.strength if matched_med else None)
-        resolved_form = (matched_med.form if matched_med and matched_med.form else item.dosage_form)
+        # Check strength: canonical catalogue strength takes precedence to prevent LLM/message override.
+        # A strength mismatch must never silently bind a message to the wrong strength variant.
+        # If identity is ambiguous or inconsistent, keep the item unresolved for disambiguation.
+        if matched_med and matched_med.strength:
+            if item.strength and item.strength.strip().lower() != matched_med.strength.strip().lower():
+                custom_unresolved.append(
+                    UnresolvedProposalItem(
+                        item=item,
+                        raw_message=raw_message,
+                        missing_fields=["parsed_strength"],
+                        reason=(
+                            f"Strength mismatch for '{med_name}': message specifies '{item.strength}' "
+                            f"but catalogue candidate specifies '{matched_med.strength}'. Disambiguation required."
+                        ),
+                    )
+                )
+                continue
+            resolved_strength = matched_med.strength
+        else:
+            resolved_strength = item.strength
+
+        # Check form: canonical catalogue form takes precedence if defined.
+        if matched_med and matched_med.form:
+            resolved_form = matched_med.form
+        else:
+            resolved_form = item.dosage_form
 
         if not resolved_strength:
             # Strength missing in both message and catalogue: do NOT fabricate

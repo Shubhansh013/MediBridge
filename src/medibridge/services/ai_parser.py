@@ -69,7 +69,7 @@ _STRENGTH_PATTERN = re.compile(
 _QTY_WITH_UNIT_PATTERN = re.compile(
     r"\b(?P<qty>\d+)\s*"
     r"(?P<unit>strips?|stripes?|patte?|patta|tablets?|tabs?|goli(?:ya|yan)?|"
-    r"bottles?|shishi|vials?|boxes?|packs?|packets?|capsules?|caps?)\b",
+    r"bottles?|shishi|vials?|boxes?|dabbe?|dabba|packs?|packets?|capsules?|caps?)\b",
     re.IGNORECASE,
 )
 
@@ -87,7 +87,7 @@ _QTY_AFTER_STATUS = re.compile(
 # Out of stock (checked first so 'available nahi hai' is recognized as OUT_OF_STOCK)
 _OUT_KEYWORDS = re.compile(
     r"\b(khatam|khtm|nahi\s+hai|nahin\s+hai|naahi\s+hai|out\s+of\s+stock|"
-    r"not\s+available|nil|zero\s+stock|finish|stock\s+out)\b",
+    r"not\s+available|nil|zero\s+stock|finish(?:ed)?|stock\s+out)\b",
     re.IGNORECASE,
 )
 
@@ -119,7 +119,7 @@ _STATUS_PHRASES = re.compile(
 _FILLER_WORDS = re.compile(
     r"\b(in|of|ke|ka|ki|ko|se|bhi|mein|me|par|pe|bhaiya|sir|ji|hain?|"
     r"tha|thi|the|bache?|bacha|left|stock|only|sirf|khatam|khtm|nahi|"
-    r"nahin|available|uplabdh|present|count|quantity)\b",
+    r"nahin|available|uplabdh|present|count|quantity|is|are|remain|remains|remaining|finish|finished|rakha)\b",
     re.IGNORECASE,
 )
 
@@ -147,11 +147,32 @@ _DOSAGE_FORM_MAP: dict[str, str] = {
     "vials": "Injection",
     "box": "Box",
     "boxes": "Box",
+    "dabba": "Box",
+    "dabbe": "Box",
     "pack": "Pack",
     "packs": "Pack",
     "packet": "Pack",
     "packets": "Pack",
 }
+
+
+# Words representing dosage packaging units or number words that, if left behind
+# in candidate medicine name, indicate an unparsed quantity/unit expression.
+# When detected, the deterministic parser rejects the segment so eligible messages
+# can fall back to the LLM cleanly rather than producing corrupted medicine names.
+_UNPARSED_UNIT_OR_NUMBER = re.compile(
+    r"\b("
+    r"strips?|stripes?|patte?|patta|tablets?|tabs?|goli(?:ya|yan)?|"
+    r"bottles?|shishi|vials?|boxes?|dabbe?|dabba|packs?|packets?|capsules?|caps?|"
+    r"zero|one|two|three|four|five|six|seven|eight|nine|ten|"
+    r"eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|"
+    r"twenty-five|thirty|forty|fifty|hundred|"
+    r"ek|do|teen|char|chaar|paanch|chhe|chhah|saat|aath|nau|das|"
+    r"gyarah|barah|terah|chaudah|pandrah|solah|satrah|atharah|unnis|bees|"
+    r"pachis|tees|chalis|pachaas"
+    r")\b",
+    re.IGNORECASE,
+)
 
 
 def _redact_secret(value: Optional[str], *, visible: int = 4) -> str:
@@ -286,6 +307,10 @@ def _parse_segment(segment: str) -> Optional[ParsedMedicineStockItem]:
     if not med_name or len(med_name) < 2 or med_name.isdigit():
         return None
 
+    # Reject if leftover packaging unit or number word is present in medicine name
+    if _UNPARSED_UNIT_OR_NUMBER.search(med_name):
+        return None
+
     try:
         return ParsedMedicineStockItem(
             medicine_name=med_name,
@@ -327,7 +352,9 @@ def parse_stock_message_deterministic(message: str) -> Optional[StockUpdatePropo
     )
 
 
-GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+DEFAULT_GEMINI_MODEL = "gemini-1.5-flash"
+GEMINI_API_URL_TEMPLATE = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+GEMINI_API_URL = GEMINI_API_URL_TEMPLATE.format(model=DEFAULT_GEMINI_MODEL)
 
 GEMINI_SYSTEM_PROMPT = """You are a medical inventory parser for Indian pharmacy updates in English, Hindi, and Hinglish.
 Extract medicine inventory updates into JSON conforming to this schema:
@@ -355,6 +382,7 @@ def parse_with_gemini(
     message: str,
     api_key: str,
     *,
+    model: Optional[str] = None,
     timeout: Optional[float] = None,
     http_client: Optional[Any] = None,
 ) -> Optional[StockUpdateProposal]:
@@ -371,8 +399,18 @@ def parse_with_gemini(
         return None
 
     resolved_timeout = _resolve_llm_timeout(timeout)
+    selected_model = model or os.getenv("GEMINI_MODEL") or DEFAULT_GEMINI_MODEL
+
+    # If using default model and no explicit model/env override was provided,
+    # use GEMINI_API_URL directly (preserving monkeypatch compatibility in tests).
+    # Otherwise, construct the URL using the requested model.
+    if selected_model == DEFAULT_GEMINI_MODEL and not model and not os.getenv("GEMINI_MODEL"):
+        base_url = GEMINI_API_URL
+    else:
+        base_url = GEMINI_API_URL_TEMPLATE.format(model=selected_model)
+
     # Build the URL with the key query param, but never log the full URL.
-    url = f"{GEMINI_API_URL}?key={api_key.strip()}"
+    url = f"{base_url}?key={api_key.strip()}"
     payload = {
         "contents": [
             {
@@ -389,6 +427,7 @@ def parse_with_gemini(
         },
     }
 
+    response = None
     try:
         if http_client is not None:
             response = http_client.post(url, json=payload, timeout=resolved_timeout)
@@ -417,21 +456,47 @@ def parse_with_gemini(
         else:
             data = json.loads(getattr(response, "text", "{}"))
 
+        if not isinstance(data, dict):
+            return None
+
         candidates = data.get("candidates", [])
-        if not candidates:
+        if not candidates or not isinstance(candidates, list):
             return None
 
-        content = candidates[0].get("content", {})
-        parts = content.get("parts", [])
-        if not parts or "text" not in parts[0]:
+        first_cand = candidates[0]
+        if not isinstance(first_cand, dict):
             return None
 
-        raw_text = parts[0]["text"].strip()
+        content_obj = first_cand.get("content")
+        if not isinstance(content_obj, dict):
+            return None
+
+        parts = content_obj.get("parts")
+        if not parts or not isinstance(parts, list):
+            return None
+
+        first_part = parts[0]
+        if not isinstance(first_part, dict) or "text" not in first_part:
+            return None
+
+        raw_text = first_part.get("text")
+        if not raw_text or not str(raw_text).strip():
+            return None
+
+        raw_text = str(raw_text).strip()
         if raw_text.startswith("```"):
             raw_text = re.sub(r"^```(?:json)?\s*", "", raw_text, flags=re.IGNORECASE).rstrip("` \n\r\t")
 
         parsed_json = json.loads(raw_text)
-        items_data = parsed_json.get("items", [])
+        if isinstance(parsed_json, list):
+            items_data = parsed_json
+            notes_val = None
+        elif isinstance(parsed_json, dict):
+            items_data = parsed_json.get("items", [])
+            notes_val = parsed_json.get("notes")
+        else:
+            return None
+
         if not items_data or not isinstance(items_data, list):
             return None
 
@@ -447,15 +512,20 @@ def parse_with_gemini(
         return StockUpdateProposal(
             items=validated_items,
             raw_message=cleaned,
-            notes=parsed_json.get("notes") or "Parsed via Gemini LLM",
+            notes=notes_val or f"Parsed via Gemini LLM ({selected_model})",
         )
     except Exception as exc:
-        # Log only the exception type — the message may embed the key-bearing URL.
         logger.warning(
             "Gemini LLM parsing failed (%s). Falling back to deterministic parser.",
             type(exc).__name__,
         )
         return None
+    finally:
+        if response is not None and hasattr(response, "close") and callable(response.close):
+            try:
+                response.close()
+            except Exception:
+                pass
 
 
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
@@ -519,6 +589,7 @@ def parse_with_groq(
         "response_format": {"type": "json_object"},
     }
 
+    response = None
     try:
         if http_client is not None:
             response = http_client.post(GROQ_API_URL, json=payload, headers=headers, timeout=resolved_timeout)
@@ -547,20 +618,41 @@ def parse_with_groq(
         else:
             data = json.loads(getattr(response, "text", "{}"))
 
+        if not isinstance(data, dict):
+            return None
+
         choices = data.get("choices", [])
-        if not choices:
+        if not choices or not isinstance(choices, list):
             return None
 
-        msg_content = choices[0].get("message", {}).get("content", "")
-        if not msg_content:
+        first_choice = choices[0]
+        if not isinstance(first_choice, dict):
             return None
 
-        raw_text = msg_content.strip()
+        msg_obj = first_choice.get("message")
+        if not isinstance(msg_obj, dict):
+            return None
+
+        msg_content = msg_obj.get("content") or ""
+        if not msg_content or not str(msg_content).strip():
+            msg_content = msg_obj.get("reasoning_content") or ""
+        if not msg_content or not str(msg_content).strip():
+            return None
+
+        raw_text = str(msg_content).strip()
         if raw_text.startswith("```"):
             raw_text = re.sub(r"^```(?:json)?\s*", "", raw_text, flags=re.IGNORECASE).rstrip("` \n\r\t")
 
         parsed_json = json.loads(raw_text)
-        items_data = parsed_json.get("items", [])
+        if isinstance(parsed_json, list):
+            items_data = parsed_json
+            notes_val = None
+        elif isinstance(parsed_json, dict):
+            items_data = parsed_json.get("items", [])
+            notes_val = parsed_json.get("notes")
+        else:
+            return None
+
         if not items_data or not isinstance(items_data, list):
             return None
 
@@ -576,15 +668,20 @@ def parse_with_groq(
         return StockUpdateProposal(
             items=validated_items,
             raw_message=cleaned,
-            notes=parsed_json.get("notes") or f"Parsed via Groq LLM ({selected_model})",
+            notes=notes_val or f"Parsed via Groq LLM ({selected_model})",
         )
     except Exception as exc:
-        # Log only the exception type — the message may embed the key-bearing URL.
         logger.warning(
             "Groq LLM parsing failed (%s). Falling back to deterministic parser.",
             type(exc).__name__,
         )
         return None
+    finally:
+        if response is not None and hasattr(response, "close") and callable(response.close):
+            try:
+                response.close()
+            except Exception:
+                pass
 
 
 def parse_stock_message(
@@ -603,16 +700,29 @@ def parse_stock_message(
     updates, distinguishes medicine strength from inventory quantity, and strictly
     rejects uncertain, future-oriented, or conversational messages.
 
-    If an LLM API key is available and use_llm is True, attempts parsing via the
-    configured LLM provider. Gemini is the default provider; Groq is only used when
-    explicitly selected via LLM_PROVIDER=groq, a gsk_-prefixed key, or provider='groq'.
-    On any failure, timeout, or missing key, safely falls back to the deterministic
-    offline parser. Failures never produce unvalidated proposals and never mutate
-    confirmed inventory — proposals are always created as PENDING pending human review.
+    Deterministic offline parsing runs first. If valid items are extracted, the proposal
+    is returned immediately with zero LLM latency and zero API cost. If deterministic
+    parsing misses (and the message is not conversational, uncertain, or future-oriented),
+    optional LLM fallback is attempted when use_llm is True and credentials exist.
+
+    Provider Selection Precedence:
+        1. Explicit function argument `provider` ('groq' or 'gemini').
+        2. Environment variable `LLM_PROVIDER` ('groq' or 'gemini').
+        3. Key prefix hint if provider is unspecified:
+           - 'gsk_' prefix -> 'groq'
+           - 'AIza' prefix -> 'gemini'
+        4. Default provider: 'groq'.
+
+    Groq is the primary default LLM provider; Gemini is an optional alternative.
+    If credentials for the selected provider are missing, no network calls are made
+    and None is returned safely (no automatic cross-provider fallback).
+    On any failure or timeout, None is returned safely. Failures never produce
+    unvalidated proposals and never mutate confirmed inventory — proposals are always
+    created as PENDING pending human review.
 
     Args:
         message: The raw text string received from the chemist.
-        use_llm: Whether to attempt LLM parsing when credentials are configured.
+        use_llm: Whether to attempt LLM parsing when deterministic parsing misses and credentials are configured.
         api_key: Optional explicit API key override (defaults to GROQ_API_KEY or GEMINI_API_KEY).
         http_client: Optional injected HTTP client for testing.
         provider: Optional explicit provider selection ('groq' or 'gemini').
@@ -634,92 +744,79 @@ def parse_stock_message(
     if not cleaned_input:
         return None
 
-    if use_llm:
-        configured_provider = (provider or os.getenv("LLM_PROVIDER") or "").strip().lower()
-        resolved_timeout = _resolve_llm_timeout(timeout)
+    # Step 1: Run deterministic offline parser first
+    det_result = parse_stock_message_deterministic(cleaned_input)
+    if det_result is not None and det_result.items:
+        return det_result
 
-        # Route 1: Explicit Groq selection
-        if configured_provider == "groq":
-            groq_key = api_key if api_key is not None else os.getenv("GROQ_API_KEY")
-            if groq_key and groq_key.strip() and groq_key.strip() != "your_groq_api_key_here":
-                try:
-                    llm_result = parse_with_groq(
-                        cleaned_input,
-                        groq_key,
-                        model=model,
-                        timeout=resolved_timeout,
-                        http_client=http_client,
-                    )
-                    if llm_result is not None and llm_result.items:
-                        return llm_result
-                except Exception as exc:
-                    logger.warning(
-                        "Groq LLM parsing threw unexpected exception (%s). Falling back to deterministic.",
-                        type(exc).__name__,
-                    )
+    # Step 2: Safety guard against conversational, uncertain, or future-oriented messages
+    # These must NEVER trigger an LLM call or fabricate stock proposals.
+    if (
+        _UNCERTAIN_WORDS.search(cleaned_input)
+        or _FUTURE_WORDS.search(cleaned_input)
+        or _CONVERSATIONAL_WORDS.search(cleaned_input)
+    ):
+        return None
 
-        # Route 2: Explicit Gemini selection
-        elif configured_provider == "gemini":
-            gemini_key = api_key if api_key is not None else os.getenv("GEMINI_API_KEY")
-            if gemini_key and gemini_key.strip() and gemini_key.strip() != "your_gemini_api_key_here":
-                try:
-                    llm_result = parse_with_gemini(
-                        cleaned_input,
-                        gemini_key,
-                        timeout=resolved_timeout,
-                        http_client=http_client,
-                    )
-                    if llm_result is not None and llm_result.items:
-                        return llm_result
-                except Exception as exc:
-                    logger.warning(
-                        "Gemini LLM parsing threw unexpected exception (%s). Falling back to deterministic.",
-                        type(exc).__name__,
-                    )
+    # Step 3: Optional LLM fallback for eligible deterministic misses
+    if not use_llm:
+        return None
 
-        # Route 3: Auto-detection / default (preserve Gemini backward compatibility)
-        else:
-            # If explicit api_key was provided directly
-            if api_key is not None and api_key.strip():
-                if api_key.strip().startswith("gsk_"):
-                    llm_result = parse_with_groq(
-                        cleaned_input, api_key, model=model, timeout=resolved_timeout, http_client=http_client
-                    )
-                else:
-                    llm_result = parse_with_gemini(
-                        cleaned_input, api_key, timeout=resolved_timeout, http_client=http_client
-                    )
+    # Resolve provider with precedence: argument > LLM_PROVIDER env var > key prefix hint > default ('groq')
+    raw_provider = (provider or os.getenv("LLM_PROVIDER") or "").strip().lower()
+    if raw_provider:
+        resolved_provider = raw_provider
+    elif api_key and api_key.strip().startswith("gsk_"):
+        resolved_provider = "groq"
+    elif api_key and api_key.strip().startswith("AIza"):
+        resolved_provider = "gemini"
+    else:
+        resolved_provider = "groq"
+
+    resolved_timeout = _resolve_llm_timeout(timeout)
+
+    # Route 1: Groq selection (default)
+    if resolved_provider == "groq":
+        groq_key = api_key if api_key is not None else os.getenv("GROQ_API_KEY")
+        if groq_key and groq_key.strip() and groq_key.strip() != "your_groq_api_key_here":
+            try:
+                llm_result = parse_with_groq(
+                    cleaned_input,
+                    groq_key,
+                    model=model,
+                    timeout=resolved_timeout,
+                    http_client=http_client,
+                )
                 if llm_result is not None and llm_result.items:
                     return llm_result
+            except Exception as exc:
+                logger.warning(
+                    "Groq LLM parsing threw unexpected exception (%s).",
+                    type(exc).__name__,
+                )
+        return None
 
-            # Check environment keys: check GEMINI_API_KEY first for 100% backward compatibility
-            gemini_key = os.getenv("GEMINI_API_KEY")
-            if gemini_key and gemini_key.strip() and gemini_key.strip() != "your_gemini_api_key_here":
-                try:
-                    llm_result = parse_with_gemini(
-                        cleaned_input, gemini_key, timeout=resolved_timeout, http_client=http_client
-                    )
-                    if llm_result is not None and llm_result.items:
-                        return llm_result
-                except Exception as exc:
-                    logger.warning(
-                        "Gemini LLM parsing threw unexpected exception (%s). Falling back to deterministic.",
-                        type(exc).__name__,
-                    )
+    # Route 2: Gemini selection (optional alternative)
+    elif resolved_provider == "gemini":
+        gemini_key = api_key if api_key is not None else os.getenv("GEMINI_API_KEY")
+        if gemini_key and gemini_key.strip() and gemini_key.strip() != "your_gemini_api_key_here":
+            try:
+                llm_result = parse_with_gemini(
+                    cleaned_input,
+                    gemini_key,
+                    model=model,
+                    timeout=resolved_timeout,
+                    http_client=http_client,
+                )
+                if llm_result is not None and llm_result.items:
+                    return llm_result
+            except Exception as exc:
+                logger.warning(
+                    "Gemini LLM parsing threw unexpected exception (%s).",
+                    type(exc).__name__,
+                )
+        return None
 
-            # Check GROQ_API_KEY
-            groq_key = os.getenv("GROQ_API_KEY")
-            if groq_key and groq_key.strip() and groq_key.strip() != "your_groq_api_key_here":
-                try:
-                    llm_result = parse_with_groq(
-                        cleaned_input, groq_key, model=model, timeout=resolved_timeout, http_client=http_client
-                    )
-                    if llm_result is not None and llm_result.items:
-                        return llm_result
-                except Exception as exc:
-                    logger.warning(
-                        "Groq LLM parsing threw unexpected exception (%s). Falling back to deterministic.",
-                        type(exc).__name__,
-                    )
-
-    return parse_stock_message_deterministic(cleaned_input)
+    # Unrecognized provider
+    logger.warning("Unrecognized LLM provider '%s'.", resolved_provider)
+    return None

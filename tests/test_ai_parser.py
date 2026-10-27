@@ -234,5 +234,108 @@ class TestAIParser(unittest.TestCase):
         self.assertIsNone(parse_stock_message("??? 12345"))
 
 
+    def test_multilingual_matrix(self):
+        """Test 16: Parameterized verification of the Phase 3 multilingual test matrix."""
+        # Matrix: (message, expected_deterministic, expected_med, expected_status, expected_qty, expected_form)
+        matrix = [
+            # English
+            ("Dolo 650 20 strips available", True, "Dolo 650", StockActionEnum.IN_STOCK, 20, "Strip"),
+            ("Only five boxes of Crocin remain", False, None, None, None, None),  # Eligible miss -> LLM
+            ("Paracetamol stock is finished", True, "Paracetamol", StockActionEnum.OUT_OF_STOCK, None, None),
+            ("Received twenty-five strips of Dolo 650", False, None, None, None, None),  # Eligible miss -> LLM
+            # Hindi / Hinglish
+            ("Dolo 650 ke 20 strips bache hain", True, "Dolo 650", StockActionEnum.IN_STOCK, 20, "Strip"),
+            ("Crocin ke 5 dabbe available hain", True, "Crocin", StockActionEnum.IN_STOCK, 5, "Box"),
+            ("Paracetamol ka stock khatam hai", True, "Paracetamol", StockActionEnum.OUT_OF_STOCK, None, None),
+            ("Dolo 650 ke pachis strips aaye hain", False, None, None, None, None),  # Eligible miss -> LLM
+        ]
+
+        for msg, is_det, exp_name, exp_status, exp_qty, exp_form in matrix:
+            with self.subTest(msg=msg, is_det=is_det):
+                # When testing deterministic behavior (use_llm=False)
+                res = parse_stock_message(msg, use_llm=False)
+                if is_det:
+                    self.assertIsNotNone(res, f"Expected deterministic parse for '{msg}'")
+                    assert res is not None
+                    self.assertEqual(len(res.items), 1)
+                    item = res.items[0]
+                    self.assertEqual(item.medicine_name, exp_name)
+                    self.assertEqual(item.status, exp_status)
+                    self.assertEqual(item.quantity, exp_qty)
+                    self.assertEqual(item.dosage_form, exp_form)
+                else:
+                    self.assertIsNone(res, f"Expected deterministic miss (to delegate to LLM) for '{msg}'")
+
+    def test_packaging_units_and_variations(self):
+        """Test 17: Various standard packaging forms and Hindi/Hinglish colloquialisms."""
+        cases = [
+            ("Amoxicillin 500mg 10 capsules available", "Amoxicillin", "500mg", 10, "Capsule", StockActionEnum.IN_STOCK),
+            ("Cough Syrup 2 bottles in stock", "Cough Syrup", None, 2, "Bottle", StockActionEnum.IN_STOCK),
+            ("Eye Drops 3 shishi hai", "Eye Drops", None, 3, "Bottle", StockActionEnum.IN_STOCK),
+            ("Insulin 4 vials present", "Insulin", None, 4, "Injection", StockActionEnum.IN_STOCK),
+            ("Bandage 10 packets available", "Bandage", None, 10, "Pack", StockActionEnum.IN_STOCK),
+            ("Crocin 50 tablets available", "Crocin", None, 50, "Tablet", StockActionEnum.IN_STOCK),
+            ("Paracetamol 30 goliya hai", "Paracetamol", None, 30, "Tablet", StockActionEnum.IN_STOCK),
+            ("Dolo 2 dabba uplabdh", "Dolo", None, 2, "Box", StockActionEnum.IN_STOCK),
+        ]
+        for msg, exp_name, exp_str, exp_qty, exp_form, exp_status in cases:
+            with self.subTest(msg=msg):
+                prop = parse_stock_message(msg, use_llm=False)
+                self.assertIsNotNone(prop, f"Failed to parse packaging for: {msg}")
+                assert prop is not None
+                item = prop.items[0]
+                self.assertEqual(item.medicine_name, exp_name)
+                self.assertEqual(item.strength, exp_str)
+                self.assertEqual(item.quantity, exp_qty)
+                self.assertEqual(item.dosage_form, exp_form)
+                self.assertEqual(item.status, exp_status)
+
+    def test_safety_and_ambiguity_rejections(self):
+        """Test 18: Strict safety rejections for uncertain, future, and ambiguous messages."""
+        ineligible_cases = [
+            # Uncertain claims
+            "shayad 10 bache hain",
+            "maybe 5 strips left",
+            "Crocin lagta hai khatam hai",
+            "pakka nahi pata Dolo",
+            # Future deliveries
+            "kal 50 strips aayenge",
+            "tomorrow 20 boxes expected",
+            "shaam ko naya stock aayega",
+            # Patient inquiries
+            "Dolo milega kya?",
+            "Crocin available hai kya?",
+            "Bhaiya Paracetamol hai kya",
+            # Price questions
+            "Dolo ka rate kya hai?",
+            "Crocin price kitna hai",
+            "Cost kitna hai dawa ka?",
+            # Ambiguous / non-medicine inputs
+            "12345 20 strips available",
+            "?? 10 strips",
+        ]
+        for msg in ineligible_cases:
+            with self.subTest(msg=msg):
+                res = parse_stock_message(msg, use_llm=False)
+                self.assertIsNone(res, f"Expected rejection for: '{msg}'")
+
+    def test_out_of_stock_conflicting_quantity_cleared(self):
+        """Test 19: OUT_OF_STOCK with contradictory non-zero quantity clears quantity to None."""
+        cases = [
+            ("Crocin 20 strips out of stock", "Crocin", "Strip"),
+            ("Paracetamol 15 tablets khatam", "Paracetamol", "Tablet"),
+        ]
+        for msg, exp_name, exp_form in cases:
+            with self.subTest(msg=msg):
+                prop = parse_stock_message(msg, use_llm=False)
+                self.assertIsNotNone(prop)
+                assert prop is not None
+                item = prop.items[0]
+                self.assertEqual(item.medicine_name, exp_name)
+                self.assertEqual(item.status, StockActionEnum.OUT_OF_STOCK)
+                self.assertIsNone(item.quantity, "Non-zero quantity must be cleared for OUT_OF_STOCK")
+                self.assertEqual(item.dosage_form, exp_form)
+
+
 if __name__ == "__main__":
     unittest.main()
