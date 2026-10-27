@@ -7,7 +7,7 @@ env/
 # Byte-compiled / optimized files
 __pycache__/
 *.py[cod]
-*$py.class
+*.class
 
 # Environment files and credentials
 .env
@@ -41,6 +41,8 @@ Desktop.ini
 .DS_Store
 
 # Distribution and packaging
+dist/
+build/
 *.egg-info/
 
 # Agent memory and assistant scratch files
@@ -51,4 +53,5 @@ memory/
 *Screenshot*
 docs/*.png
 
+# Vercel deployment artifacts
 .vercel

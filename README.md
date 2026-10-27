@@ -6,295 +6,239 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Project-Hackathon-0F766E?style=for-the-badge" alt="Hackathon Project" />
-  <img src="https://img.shields.io/badge/Backend-FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white" alt="FastAPI" />
-  <img src="https://img.shields.io/badge/Language-Python%203.10+-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python" />
-  <img src="https://img.shields.io/badge/AI%2FLLM-Groq%20%7C%20Gemini-8E24AA?style=for-the-badge" alt="Groq | Gemini" />
-  <img src="https://img.shields.io/badge/Database-SQLite%20WAL%20%2B%20SQLAlchemy%202.0-4479A1?style=for-the-badge&logo=sqlite&logoColor=white" alt="SQLite" />
-  <img src="https://img.shields.io/badge/Tests-276%20Passed-22C55E?style=for-the-badge" alt="276 Passed" />
-  <img src="https://img.shields.io/badge/Status-Production%20Ready-3B82F6?style=for-the-badge" alt="Production Ready" />
+  <img src="https://img.shields.io/badge/Python-3.10%2B-blue" alt="Python" />
+  <img src="https://img.shields.io/badge/FastAPI-Backend-009688" alt="FastAPI" />
+  <img src="https://img.shields.io/badge/Pydantic-Validation-E92063" alt="Pydantic" />
+  <img src="https://img.shields.io/badge/AI%2FLLM-Integrated-8A2BE2" alt="AI/LLM" />
+  <img src="https://img.shields.io/badge/Testing-pytest-blue" alt="Testing" />
+  <img src="https://img.shields.io/badge/Status-In%20Development-orange" alt="Status" />
 </p>
 
 ---
 
 ## 🌐 Overview
 
-**MediBridge** is a hyper-local pharmacy connectivity and medicine availability platform designed to bridge the communication gap between patients and local pharmacies.
+**MediBridge** is a pharmacy connectivity platform designed to make medicine availability easier to discover and manage.
 
-Finding essential medicines during acute needs is frequently frustrating: patients call multiple stores, travel between locations, or rely on outdated, unverified stock listings. Simultaneously, busy retail chemists lack the time for complicated inventory management software.
+Finding a medicine can be frustrating when patients have to call multiple pharmacies, travel between locations, or rely on outdated stock information. At the same time, pharmacies need a simple way to maintain accurate inventory without complicated workflows.
 
-MediBridge addresses this problem with a unified, 4-tier platform:
-1. **Patients** discover real-time medicine availability at nearby verified pharmacies, check stock freshness, and find composition-matched generic substitutes.
-2. **Chemists** update stock effortlessly using natural-language messages (English, Hindi, and Hinglish) processed by an intelligent 5-stage NLP/LLM pipeline.
-3. **Safety First**: Every AI-interpreted stock update is strictly treated as an unconfirmed **proposal**. No database mutation occurs without explicit verification and confirmation by an authorized chemist (Human-in-the-Loop).
+MediBridge aims to bridge this gap by connecting patients with nearby pharmacies and simplifying stock updates through natural-language messages.
 
-> **Core System Guarantee:** An interpreted message is a proposal, not proof of stock. Confirmed inventory changes require explicit human authorization and produce an immutable, single-step rollback audit trail.
+The platform is being developed with a focus on usability, reliable inventory management, and human-verified stock updates.
+
+> **Our core principle:** An interpreted message is a proposal, not proof of actual stock. Inventory changes must follow the appropriate verification and confirmation workflow.
 
 ---
 
 ## 🚨 The Problem
 
-- **Uncertain Local Availability:** Patients frequently visit multiple stores without knowing whether their medicine is in stock.
-- **Time-Critical Search Friction:** Frantic phone calls and physical searches delay treatment during medical emergencies.
-- **Complex Inventory Workflows:** Independent pharmacy staff find enterprise ERP/inventory software tedious to operate during peak retail hours.
-- **Outdated Stock Information:** Stale, unconfirmed online listings mislead patients.
-- **Lack of Generic Transparency:** Patients often struggle to find safe, approved generic brand alternatives when their prescribed brand is out of stock.
+- **Uncertain availability:** Patients may visit pharmacies without knowing whether a medicine is in stock.
+- **Time-consuming searches:** Finding a medicine can involve contacting multiple pharmacies.
+- **Manual inventory management:** Updating stock records can be tedious for pharmacy staff.
+- **Outdated information:** Unconfirmed inventory data can lead to misleading availability results.
+- **Limited accessibility:** Not every pharmacy has access to sophisticated inventory-management software.
 
 ---
 
 ## 💡 Our Solution
 
-MediBridge creates a seamless, verified loop between patient discovery and pharmacy stock management:
+MediBridge creates a reliable connection between patients and pharmacies through a shared inventory workflow:
 
-* 🔎 **Intelligent Medicine Search:** Search catalogue medicines by brand names, generic active salts, or colloquial Hinglish aliases.
-* 📍 **Geospatial Pharmacy Discovery:** Haversine distance-calculated store discovery filtered by active stock and 24-hour freshness indicators.
-* 🤖 **Hybrid AI/LLM Stock Parser:** Natural language comprehension combining ultra-fast deterministic regex parsing with structured Groq / Google Gemini LLM fallback.
-* 🛡️ **Strict Human-in-the-Loop:** Unconfirmed stock proposals (`PENDING`) require explicit chemist confirmation before inventory balances update.
-* 📋 **Immutable Audit Trail & Undo:** Atomic transactional history logging with single-step rollback protection against accidental updates.
-* 💊 **Composition-Matched Substitutes:** Instant generic alternative recommendations matching chemical composition, strength, and dosage form.
-* 📱 **Multi-Channel Interfaces:** Modern responsive mobile web application (Google Stitch design), dual-mode Telegram bot, and Streamlit operational dashboard.
-
----
-
-## ⚙️ How It Works
-
-### The 5-Stage AI/LLM Stock Proposal Pipeline
-
-```mermaid
-flowchart TD
-    A[Chemist submits natural language text] --> B[Stage 1: Primary Deterministic Parser]
-    B -- Matches regex rules --> D[Structured Proposal Data]
-    B -- Complex / Ambiguous message --> C[Stage 2: LLM Fallback Groq / Gemini]
-    C --> D
-    D --> E[Stage 3: Entity Extraction & Catalogue Resolution]
-    E --> F[Stage 4: Safety & Regulatory Validation]
-    F --> G{Confidence < 0.8 OR Schedule H?}
-    G -- Yes --> H[Flag for Mandatory Review]
-    G -- No --> I[Standard Pending Proposal]
-    H --> J[Stage 5: Persist Unconfirmed Proposal]
-    I --> J
-    J --> K[Chemist Reviews on Mobile UI / Telegram]
-    K -- Reject --> L[Proposal Rejected / Inactive]
-    K -- Confirm --> M[Atomic Transaction: Apply to Inventory + Log Audit Trail]
-    M --> N[Real-Time Availability Updated for Patients]
-```
-
-### Natural Language Example
-
-A chemist messages:
-> *"Dolo 650 ke 20 strips available hain"*
-
-1. **Parser Execution:** The parser isolates the medicine name (`Dolo`), dosage strength (`650mg`), and package quantity (`20 strips`), strictly distinguishing medicine strength from inventory quantity.
-2. **Catalogue Resolution:** Resolves against catalogue entry ID `1` (`Dolo 650`, Generic: `Paracetamol`, Strength: `650mg`, Form: `tablet`).
-3. **Safety Check:** Evaluates Schedule H prescription status and parser confidence score (e.g., `0.95`).
-4. **Proposal Creation:** Generates a `PENDING` proposal with a 24-hour expiration timestamp. **Inventory remains untouched.**
-5. **Chemist Confirmation:** The chemist reviews the card on the mobile web app or Telegram bot and taps **Confirm**. The inventory updates atomically and an immutable history row is recorded.
+- 🔎 **Medicine discovery:** Search medicines by brand name, generic formulation (salt), and common aliases.
+- 🏪 **Pharmacy connectivity:** Discover medicines across participating independent pharmacies in Delhi NCR.
+- 💊 **Patient Mode:** Search the catalogue, inspect medicine details, and explore therapeutic substitutes.
+- 🧑‍⚕️ **Chemist Mode:** Provide an intuitive interface for pharmacy-side stock operations and pending proposal confirmations.
+- 💬 **Natural-language stock parsing:** Interpret supported English, Hindi, and Hinglish stock messages.
+- 🧠 **AI/LLM-assisted interpretation:** Fallback extraction of medicine and stock information from complex natural-language messages using Groq and Gemini.
+- 🛡️ **Human-verified updates:** Require confirmation from an authorized chemist before a proposed stock change becomes official.
+- 📋 **Inventory history:** Maintain an immutable audit trail of changes and support single-step reversals.
 
 ---
 
-## 🏗️ Technical Architecture
+## ⚙️ Architecture
 
-MediBridge is engineered with a strict 4-tier separation of concerns:
+MediBridge follows a modular architecture where the web client communicates with a Python backend through REST APIs. Application services handle catalogue operations, parsing, validation, and business rules, while the database layer manages persistence.
 
+```text
+                    MediBridge
+                         |
+               Mobile-Style Web Client
+                  /             \
+           Patient Mode       Chemist Mode
+                  \             /
+                         |
+                    FastAPI
+                    REST API
+                         |
+          +--------------+--------------+
+          |              |              |
+      Catalogue      Parsing         Application
+      Services       Pipeline         Services
+                         |
+                  Deterministic +
+                  AI/LLM-Assisted
+                  Interpretation
+                         |
+                  Pydantic Validation
+                         |
+                Catalogue and Business
+                    Rule Checks
+                         |
+                   Human Review
+                         |
+                 Authorized Operations
+                         |
+                   Database Layer
 ```
-┌────────────────────────────────────────────────────────────────────────┐
-│                        1. USER INTERFACE TIER                          │
-│                                                                        │
-│    ┌───────────────────────────┐      ┌───────────────────────────┐    │
-│    │  Patient Mobile Web App   │      │  Chemist Mobile Web App   │    │
-│    │  - Real-Time Search       │      │  - Conversational NLP     │    │
-│    │  - Nearby Pharmacy Map    │      │  - Proposal Verification  │    │
-│    │  - Substitute Discovery   │      │  - Store Inventory & Undo │    │
-│    └─────────────┬─────────────┘      └─────────────┬─────────────┘    │
-│                  │                                  │                  │
-│    ┌─────────────┴─────────────┐      ┌─────────────┴─────────────┐    │
-│    │   Telegram Bot (bot.py)   │      │ Streamlit Dashboard (GUI) │    │
-│    │   Dual-Mode Bot Interface │      │ Inventory, Logs, Proposals│    │
-│    └─────────────┬─────────────┘      └─────────────┬─────────────┘    │
-│                  └─────────────────┬────────────────┘                  │
-└────────────────────────────────────┼───────────────────────────────────┘
-                                     │ JSON over HTTP (CORS-enabled)
-┌────────────────────────────────────▼───────────────────────────────────┐
-│                       2. REST API GATEWAY TIER                         │
-│                                                                        │
-│    FastAPI Application (`api/main.py`)                                 │
-│    - 23 REST Endpoints with Pydantic v2 Schema Validation              │
-│    - Haversine Geolocation Distance Calculation (0.5 - 50 km)          │
-│    - Server-Side Pharmacy Scoping & Authorization (HTTP 403)           │
-│    - Static File Mounting (/app) for Mobile Web Client                 │
-└────────────────────────────────────┬───────────────────────────────────┘
-                                     │ Pure Python Invocations
-┌────────────────────────────────────▼───────────────────────────────────┐
-│                          3. SERVICE LAYER                              │
-│                                                                        │
-│    ┌───────────────────┐  ┌───────────────────┐  ┌───────────────────┐ │
-│    │  Proposal Service │  │Confirmation Service│ │  History Service  │ │
-│    │ (process_stock_   │  │(confirm_and_apply_ │ │ (orchestrate_undo)│ │
-│    │      message)     │  │     proposal)      │ │                   │ │
-│    └─────────┬─────────┘  └─────────┬─────────┘  └─────────┬─────────┘ │
-│              │                      │                      │           │
-│    ┌─────────┴─────────┐  ┌─────────┴─────────┐            │           │
-│    │  AI Parser Engine │  │ Proposal Adapter  │            │           │
-│    │  - Regex Primary  │  │ - Confidence Badge│            │           │
-│    │  - Groq/Gemini LLM│  │ - Schedule H Alert│            │           │
-│    └───────────────────┘  └───────────────────┘            │           │
-│              │                                             │           │
-│    ┌─────────┴─────────┐  ┌────────────────────────────────┴─────────┐ │
-│    │ Catalogue Service │  │ Operations Adapter (DBOperationsAdapter) │ │
-│    │ - Composition Match│  │ Transaction Boundary & Timestamp Control │ │
-│    └───────────────────┘  └────────────────────────────────┬─────────┘ │
-└────────────────────────────────────────────────────────────┼───────────┘
-                                                             │ SQLAlchemy 2.0
-┌────────────────────────────────────────────────────────────▼───────────┐
-│                         4. DATA PERSISTENCE TIER                       │
-│                                                                        │
-│    Relational Schema: `medibridge_db/models.py` (11 Relational Tables) │
-│    Data Operations:   `medibridge_db/operations.py` (23 Pure Functions)│
-│    Storage Engine:    SQLite with Write-Ahead Logging (WAL)            │
-│                       Enforced Foreign Keys (`PRAGMA foreign_keys=ON`) │
-└────────────────────────────────────────────────────────────────────────┘
+
+### Core Components
+
+| Component | Responsibility |
+|---|---|
+| **Web client** | Patient discovery and chemist operations interfaces (`/app/`) |
+| **FastAPI** | REST API gateway, route orchestration, CORS, and response serialization |
+| **Pydantic** | Structured data validation and contract enforcement |
+| **Catalogue service** | Medicine lookup, fuzzy alias matching, and salt-equivalent substitutes |
+| **Deterministic parser** | Offline regex and Hinglish rule-based extraction pipeline |
+| **AI/LLM service** | Groq-first fallback parser with Gemini support for complex messages |
+| **Proposal service** | Grounding parsed items against catalogue, checking conflicts, and managing 24h expiration |
+| **Confirmation service** | Human-in-the-loop confirmation, atomic inventory application, and audit logging |
+| **Database layer** | SQLite with WAL mode, foreign key enforcement, 11 ORM models, and 24 pure operations |
+| **Test suite** | Automated verification of schemas, operations, services, API endpoints, and AI robustness |
+
+### Architecture Principles
+
+- **Separation of concerns:** API routes, services, schemas, and persistence remain strictly modular.
+- **Shared business logic:** All interfaces consume common backend services and database adapters.
+- **Human oversight:** Parsed messages never automatically update live inventory without pharmacist confirmation.
+- **Pharmacy-scoped access:** Protected operations verify user linkage and pharmacy scoping before mutating state.
+- **Auditability:** Every stock change records a corresponding `StockHistory` entry.
+- **Data integrity:** Validate proposals through Pydantic schemas before applying changes.
+
+---
+
+## 🏗️ Technical Architecture: 4-Tier Breakdown
+
+MediBridge is structured across four clean tiers:
+
+```text
++---------------------------------------------------------------+
+| Tier 1: Client Layer                                          |
+| - Google Stitch Mobile Web Client (/app/)                     |
+| - Patient Mode (Search, Pharmacy Discovery, Substitutes)      |
+| - Chemist Mode (Natural Language Input, Proposal Confirm/Undo)|
++---------------------------------------------------------------+
+                               |  HTTP / JSON
+                               v
++---------------------------------------------------------------+
+| Tier 2: API Gateway Layer                                     |
+| - FastAPI REST API (23 endpoints in api/main.py)              |
+| - CORS Middleware, Static File Mounting, Health Checks        |
+| - Pydantic Request / Response Validation                      |
++---------------------------------------------------------------+
+                               |  Service Orchestration
+                               v
++---------------------------------------------------------------+
+| Tier 3: Core Domain Services                                  |
+| - AI Parser: Deterministic regex-first + Groq/Gemini LLM      |
+| - Proposal Service: 5-stage pipeline, 24h expiration          |
+| - Confirmation Service: Atomic review, application, auditing  |
+| - History Service: Append-only ledger, single-step undo       |
+| - Catalogue Service: Salt substitution, alias search          |
++---------------------------------------------------------------+
+                               |  Operations Adapter
+                               v
++---------------------------------------------------------------+
+| Tier 4: Database & Persistence Layer                          |
+| - SQLite WAL Mode (WAL, busy_timeout=5000, foreign_keys=ON)  |
+| - SQLAlchemy 2.0 Declarative Models (11 relational tables)   |
+| - 24 Pure Operations Functions (medibridge_db/operations.py)  |
++---------------------------------------------------------------+
 ```
+
+---
+
+## 🔄 Core Workflows
+
+### 1. Patient Medicine Discovery Workflow
+
+1. **Access:** Patient opens the MediBridge web application at `/app/`.
+2. **Search:** Enters medicine brand name, generic name, or alias (e.g., `"Dolo"`, `"Paracetamol"`).
+3. **Lookup:** Backend searches catalogue with case-insensitive matching and alias resolution.
+4. **Availability:** System checks inventory across registered pharmacies and flags stock status (`IN_STOCK`, `LOW_STOCK`, `OUT_OF_STOCK`).
+5. **Freshness:** Inventory entries updated more than 24 hours ago are clearly marked as `"not recently confirmed"`.
+6. **Substitutes:** If unavailable, patient can view salt-equivalent alternatives (e.g., Calpol 650 for Dolo 650) with Schedule H flags highlighted.
+
+### 2. Chemist AI Stock Update Workflow
+
+A chemist sends a natural-language update:
+
+> `Dolo 650 ke 20 strips hain`
+
+The update is processed through a strict 5-stage pipeline:
+
+```text
+[Raw Message]
+      |
+      v
+1. Input Hygiene & Intent Check ---> (Rejects conversational, future, or uncertain text)
+      |
+      v
+2. Deterministic Regex Parser ------> (Extracts medicine, strength, quantity, status offline)
+      | (if complex or ambiguous)
+      v
+3. AI/LLM Provider Fallback --------> (Groq default; Gemini optional; validated by Pydantic)
+      |
+      v
+4. Catalogue Grounding & Proposal -> (Matches catalogue, checks strength conflict, sets 24h expiry)
+      |
+      v
+5. Chemist Review & Confirmation --> (Authorized chemist reviews proposal; atomic update applied)
+```
+
+1. **Receive:** The chemist inputs a natural-language message via the Web UI or Telegram.
+2. **Deterministic Parse:** The offline regex parser attempts extraction without external API calls.
+3. **LLM Fallback (if required):** If the message is complex, Groq (`llama-3.3-70b-versatile` or `openai/gpt-oss-120b`) extracts structured JSON.
+4. **Pydantic Validation:** Extracted data is strictly validated into a `StockUpdateProposal`.
+5. **Catalogue Grounding:** Proposal service matches the medicine against the catalogue, validates strength/form, and records a `PENDING` proposal.
+6. **Human Review:** The chemist inspects the proposal in Chemist Mode.
+7. **Apply:** Once confirmed, the system atomically updates inventory and writes an immutable audit record to `StockHistory`.
 
 ---
 
 ## 🛡️ Safety & Regulatory Integrity
 
-Medicine data demands rigorous safety standards. MediBridge enforces non-negotiable architectural guardrails:
-
-* **No Direct AI Writes:** The AI parser produces proposals only. Unconfirmed proposals cannot alter confirmed stock.
-* **Strict Human Confirmation:** Inventory mutations execute exclusively after explicit human authorization.
-* **Pharmacy-Scoped Access Control:** State-mutating endpoints verify that `chemist_user_id` holds active employment at the targeted `pharmacy_id` (HTTP 403 Forbidden on violation).
-* **24-Hour Expiration:** Stock proposals automatically expire after 24 hours. Expired proposals cannot be applied.
-* **Prescription Drug (Schedule H) Safeguards:** Controlled drugs are automatically flagged with high-visibility safety alerts requiring pharmacist verification.
-* **Immutable Audit Trail:** Stock updates produce append-only history records containing previous quantity, new quantity, chemist ID, and timestamp.
-* **Protected Single-Step Rollback (Undo):**
-  - An `UNDO` record cannot itself be undone.
-  - A historical change cannot be undone more than once.
-  - If a newer change exists for the same inventory row, older changes are protected from rollback until newer ones are reversed.
-* **Freshness Transparency:** Inventories confirmed > 24 hours ago are visually flagged (`is_stale = true`), eliminating misleading live guarantees.
-
----
-
-## ✨ Key Features & User Interfaces
-
-### 1. Patient Experience (Public Discovery)
-* **Real-Time Medicine Search:** Search all 25 catalogue medicines by brand, generic salt, or registered alias.
-* **Nearby Pharmacy Geolocation:** Find open pharmacies sorted by physical Haversine distance with interactive radius filtering.
-* **Stock Freshness Badges:** Clear availability states (`IN_STOCK`, `LOW_STOCK`, `OUT_OF_STOCK`) with exact confirmation timestamps.
-* **Substitute Explorer:** Automatic composition-based alternatives matching active salts (e.g., finding Calpol, Crocin, or Dolo for Paracetamol 650mg).
-
-### 2. Chemist Experience (Inventory Operations)
-* **Natural Language Stock Updates:** Free-text submissions in English, Hindi, and Hinglish.
-* **Verification Cards:** Review parsed medicine name, strength, proposed quantity change, and confidence score before confirming.
-* **Pharmacy Inventory Tracker:** Live stock table with stock status indicators and staleness alerts.
-* **One-Click Audit & Undo:** Complete history of stock movements with immediate single-step undo.
-
-### 3. Client Interfaces
-* **Mobile Web App (`/app/`):** Primary client built with Google Stitch design principles (responsive, mobile ergonomics, clean typography, bottom navigation, instant role switching).
-* **Legacy ERP Dashboard (`medibridge_dashboard.py`):** Optional legacy prototype for tabular multi-pharmacy stock exploration.
-* **Legacy Prototypes (`bot.py`, `dashboard.py`):** Deprecated and disabled prototype scripts preserved for archival reference.
-
----
-
-## 🛠️ Technology Stack
-
-| Layer | Technologies |
-|---|---|
-| **Frontend UI** | HTML5, Modern CSS (Stitch Design System), Vanilla JavaScript (Zero Build Step), Streamlit, Python-Telegram-Bot |
-| **API Gateway** | FastAPI, Uvicorn, Pydantic v2, CORS Middleware |
-| **AI & NLP** | Hybrid Architecture: Deterministic RegEx Primary Parser + Groq (Llama 3) / Google Gemini API Fallback |
-| **Service Layer** | Python 3.10+, Repository Adapter Pattern (`DBOperationsAdapter`, `ProposalAdapter`) |
-| **Database & ORM** | SQLAlchemy 2.0, SQLite 3 (WAL Mode, Immediate Transactions, Foreign Key PRAGMA) |
-| **Testing** | pytest, FastAPI TestClient, httpx |
-| **DevOps & Versioning**| Git, GitHub, Python Virtual Environments (`.venv`) |
-
----
-
-## 📁 Repository Structure
-
-```text
-medidoc/
-├── api/                             # FastAPI REST Gateway
-│   ├── __init__.py
-│   └── main.py                      # 23 REST Endpoints, CORS, /app static mount
-├── docs/                            # Architectural & Specification Docs
-│   ├── APP_REQUIREMENTS.md          # Dual role requirements & NFRs
-│   ├── architecture.md              # 4-tier architecture & sequence diagrams
-│   ├── COMPLETION_REPORT.md         # Verification report & phase milestones
-│   ├── CONTRACT.md                  # Service layer API contracts
-│   ├── IMPLEMENTATION_PLAN.md       # Implementation roadmap
-│   ├── MIGRATION_MAP.md             # Prototype-to-mobile mapping
-│   ├── prd.md                       # Product requirements document
-│   └── rules.md                     # Business rules & safety constraints
-├── medibridge_db/                   # Database Persistence Tier
-│   ├── models.py                    # 11 SQLAlchemy 2.0 ORM Models
-│   └── operations.py                # 23 Pure Database Operations Functions
-├── src/medibridge/                  # Core Business Logic & Services
-│   ├── schemas/                     # Pydantic v2 Validation Schemas
-│   │   ├── search.py                # Medicine & pharmacy search schemas
-│   │   └── stock.py                 # Stock proposals & inventory schemas
-│   └── services/                    # Business Rule Orchestration
-│       ├── ai_parser.py             # 5-stage deterministic + LLM parser
-│       ├── catalogue_service.py     # Substitute discovery & catalogue search
-│       ├── confirmation_service.py  # Proposal confirmation & stock application
-│       ├── history_service.py       # Audit trail & single-step undo engine
-│       ├── persistence.py           # Session management & transaction control
-│       ├── proposal_adapter.py      # Confidence scoring & review flagging
-│       └── proposal_service.py      # Proposal creation & scoping checks
-├── static/                          # Google Stitch Mobile Web Client
-│   ├── app.js                       # Client-side controller & API client
-│   ├── index.html                   # 7-view responsive mobile UI
-│   └── styles.css                   # Stitch design system color tokens & cards
-├── tests/                           # Comprehensive Test Suite (276 Tests)
-│   ├── test_ai_parser.py            # NLP parsing tests
-│   ├── test_api.py                  # REST API gateway tests
-│   ├── test_catalogue_service.py    # Search & substitute matching tests
-│   ├── test_confirmation_service.py # Confirmation workflow tests
-│   ├── test_database.py             # Connection & session tests
-│   ├── test_e2e_workflow.py         # End-to-end propose-confirm-undo tests
-│   ├── test_history_service.py      # History immutability & undo tests
-│   ├── test_llm_parser.py           # LLM fallback integration tests
-│   ├── test_models.py               # SQLAlchemy ORM model tests
-│   ├── test_operations.py           # Database operations tests
-│   ├── test_operations_adapter.py   # Repository adapter tests
-│   ├── test_persistence.py          # SQLite WAL persistence tests
-│   ├── test_proposal_adapter.py     # Proposal record tests
-│   ├── test_proposal_service.py     # Proposal lifecycle tests
-│   ├── test_schemas.py              # Pydantic schema validation tests
-│   ├── test_seed.py                 # Initial seed verification tests
-│   ├── test_sqlite_repository.py    # Repository pattern tests
-│   └── test_ui_integration.py       # Mobile frontend integration tests
-├── bot.py                           # Telegram Bot Interface (Deprecated & Disabled)
-├── dashboard.py                     # Legacy Demo Dashboard (Deprecated & Disabled)
-├── medibridge_dashboard.py          # Streamlit ERP Dashboard (Legacy Prototype)
-├── run.py                           # Development server runner (Optional convenience)
-├── medibridge.db                    # SQLite Database (WAL mode)
-├── pyproject.toml                   # Project configuration & pytest settings
-├── requirements.txt                 # Python dependencies
-└── README.md                        # Project documentation
-```
+- **Human-in-the-Loop:** Parsed AI proposals never modify confirmed inventory directly. An authorized chemist must verify and confirm every proposal.
+- **Zero Hallucination Writes:** If an AI model hallucinates a non-existent medicine or invalid dosage, catalogue grounding rejects or flags the item for review.
+- **24-Hour Expiration:** Unconfirmed proposals automatically expire after 24 hours to prevent applying stale updates.
+- **Single-Step Undo:** Chemists can immediately reverse accidental stock updates with one tap.
+- **Schedule H Compliance:** Prescription-required drugs are explicitly flagged in both patient and chemist views. Availability is shown without medical or dosage advice.
 
 ---
 
 ## 📡 REST API Quick Reference
 
-| Method | Endpoint | Description | Access |
+FastAPI exposes 23 REST endpoints under `/api`:
+
+| Group | Method | Endpoint | Description |
 |---|---|---|---|
-| `GET` | `/api/health` | Service health & database connectivity check | Public |
-| `GET` | `/api/medicines/` | List all 25 verified catalogue medicines | Public |
-| `GET` | `/api/medicines/search?q={query}` | Search medicines by brand, generic, or alias | Public |
-| `GET` | `/api/medicines/{id}` | Detailed medicine card & dosage information | Public |
-| `GET` | `/api/medicines/{id}/substitutes` | Therapeutic alternatives matching composition | Public |
-| `GET` | `/api/pharmacies/nearby` | Haversine distance-filtered pharmacy discovery | Public |
-| `GET` | `/api/pharmacies/{id}/inventory` | Live store inventory with freshness flags | Public |
-| `GET` | `/api/users/{user_id}/pharmacies` | Chemist-authorized store affiliations | Chemist |
-| `POST`| `/api/proposals` | Submit natural-language stock update | Chemist |
-| `GET` | `/api/pharmacies/{id}/proposals` | View active unconfirmed proposals | Chemist |
-| `POST`| `/api/proposals/{id}/confirm` | Verify and apply proposal to inventory | Chemist |
-| `POST`| `/api/proposals/{id}/reject` | Reject inaccurate stock proposal | Chemist |
-| `GET` | `/api/pharmacies/{id}/history` | Append-only store audit trail | Chemist |
-| `POST`| `/api/history/{id}/undo` | Execute single-step rollback on stock change | Chemist |
-| `POST`| `/api/substitutions/approve` | Pharmacist regulatory approval for substitute | Pharmacist |
+| **Health** | `GET` | `/api/health` | Service and database connectivity health check |
+| **Medicines** | `GET` | `/api/medicines` | List all active medicines in catalogue |
+| | `GET` | `/api/medicines/search` | Search by brand, salt, or alias (`?q=`) |
+| | `GET` | `/api/medicines/{id}` | Retrieve medicine details |
+| | `GET` | `/api/medicines/{id}/substitutes` | Find salt-equivalent therapeutic alternatives |
+| **Pharmacies** | `GET` | `/api/pharmacies` | List all verified pharmacies |
+| | `GET` | `/api/pharmacies/nearby` | Haversine distance search (`?lat=&lon=&radius_km=`) |
+| | `GET` | `/api/pharmacies/{id}` | Pharmacy location and contact details |
+| | `GET` | `/api/pharmacies/{id}/inventory` | Pharmacy live inventory with staleness flags |
+| **Proposals** | `POST` | `/api/proposals` | Parse stock message into unconfirmed proposal |
+| | `GET` | `/api/proposals/pending` | List pending proposals for pharmacy |
+| | `GET` | `/api/proposals/{id}` | Proposal details with confidence score |
+| | `POST` | `/api/proposals/{id}/confirm` | Authorized chemist confirms and applies update |
+| | `POST` | `/api/proposals/{id}/reject` | Reject and dismiss unconfirmed proposal |
+| **History & Undo** | `GET` | `/api/history/{pharmacy_id}` | Append-only stock audit ledger |
+| | `POST` | `/api/history/{history_id}/undo` | Revert stock update to previous state |
+| **Users** | `GET` | `/api/users/{user_id}/pharmacies` | Check chemist/pharmacist authorization |
 
 ---
 
@@ -302,49 +246,68 @@ medidoc/
 
 ### Prerequisites
 
-* **Python 3.10** or higher
-* **Git**
-* Modern Web Browser (Chrome, Safari, Firefox, Edge)
+- Python 3.10, 3.11, or 3.12
+- SQLite 3.35+ (bundled with standard Python)
+- Git
 
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/Shubhansh013/MediBridge.git
-cd MediBridge
+git clone https://github.com/your-org/medidoc.git
+cd medidoc
 ```
 
 ### 2. Set Up a Virtual Environment
 
-**Windows (PowerShell):**
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-```
-
-**macOS / Linux:**
 ```bash
+# On Linux/macOS
 python3 -m venv .venv
 source .venv/bin/activate
+
+# On Windows (PowerShell)
+python -m venv .venv
+.venv\Scripts\Activate.ps1
 ```
 
 ### 3. Install Dependencies
 
 ```bash
-python -m pip install --upgrade pip
+# Production dependencies
 pip install -r requirements.txt
+
+# Or editable install with development tools
+pip install -e ".[dev]"
 ```
 
 ### 4. Configure Environment Variables (Optional)
 
-Create a `.env` file in the root directory (refer to `.env.example`):
+Copy `.env.example` to `.env`:
+
+```bash
+cp .env.example .env
+```
 
 ```ini
-# Optional: LLM Fallback API Keys (Primary parser operates offline without keys)
+# Primary LLM Provider (Offline deterministic parser operates without keys)
 GROQ_API_KEY=your_groq_api_key_here
-GEMINI_API_KEY=your_gemini_api_key_here
+GROQ_MODEL=llama-3.3-70b-versatile
+LLM_PROVIDER=groq
+LLM_TIMEOUT=3.0
 
-# Optional: Telegram Bot Token (for bot.py)
-TELEGRAM_BOT_TOKEN=your_telegram_bot_token_here
+# Optional Alternative Provider
+GEMINI_API_KEY=your_gemini_api_key_here
+GEMINI_MODEL=gemini-1.5-flash
+
+# Database Configuration
+DATABASE_URL=sqlite:///./medibridge.db
+```
+
+### 5. Initialize the Database
+
+MediBridge uses SQLite in WAL mode. Initialize and seed the database with 12 pharmacies, 25 medicines, and sample inventory:
+
+```bash
+python scripts/init_db.py
 ```
 
 ---
@@ -353,38 +316,36 @@ TELEGRAM_BOT_TOKEN=your_telegram_bot_token_here
 
 ### Local Development (Primary Web App)
 
-Start the MediBridge FastAPI server & web application:
+Start the MediBridge FastAPI server and web client:
 
 ```bash
 python -m uvicorn api.main:app --reload
 ```
 
-*(Alternatively, use the convenience runner: `python run.py`)*
+*(Alternatively, use the runner script: `python run.py`)*
 
-Once running, access the application and services:
-* **Web Application:** [http://127.0.0.1:8000/app/](http://127.0.0.1:8000/app/) *(Google Stitch mobile client for patients & chemists)*
-* **Root (Browser Redirect):** [http://127.0.0.1:8000/](http://127.0.0.1:8000/) *(Automatically redirects web browsers to `/app/`)*
+Once running, access the application:
+* **Web Client:** [http://127.0.0.1:8000/app/](http://127.0.0.1:8000/app/) *(Google Stitch mobile client for patients & chemists)*
+* **Root Browser Redirect:** [http://127.0.0.1:8000/](http://127.0.0.1:8000/) *(Automatically redirects to `/app/`)*
 * **Interactive API Documentation:** [http://127.0.0.1:8000/api/docs](http://127.0.0.1:8000/api/docs) *(Swagger UI)*
 * **System Health Check:** [http://127.0.0.1:8000/api/health](http://127.0.0.1:8000/api/health)
 * **Live Production App:** [https://medidoc-sigma.vercel.app/app/](https://medidoc-sigma.vercel.app/app/)
 
-### Legacy Prototype Tools (Optional)
-
-The following prototypes are kept for archival and demonstration reference, but are **not** the primary application:
+### Legacy Prototype Tools (Archival)
 
 * **Legacy Streamlit ERP (`medibridge_dashboard.py`):**
   ```bash
   streamlit run medibridge_dashboard.py
   ```
-  *(Note: This is an older prototype. All active chemist and patient workflows are served via the Web App at `/app/`)*
+  *(Note: Active chemist and patient workflows are served via the Web App at `/app/`)*
 * **Deprecated Prototypes (`bot.py`, `dashboard.py`):**
-  These legacy entry points have been deprecated, disabled, and commented out. All active functionality is served via the REST API and modern web client.
+  These legacy entry points have been deprecated and disabled. All active functionality is served via the REST API and modern web client.
 
 ---
 
 ## 🧪 Testing & Verification
 
-MediBridge includes an automated test suite with **276 unit and integration tests** verifying all schemas, ORM models, pure database operations, service orchestration, NLP parsing, and REST endpoints.
+MediBridge includes an automated test suite with **333 tests** verifying database models, operations, service orchestration, NLP parsing, API endpoints, catalogue safety, and AI evaluation benchmarks.
 
 Run the entire test suite:
 
@@ -398,23 +359,33 @@ Run test suite with concise output:
 pytest -q
 ```
 
-Run API endpoint tests only:
+Run specific test modules:
 
 ```bash
+# REST API endpoint tests
 pytest tests/test_api.py -v
+
+# AI / LLM parser and provider tests
+pytest tests/test_llm_parser.py -v
+
+# Catalogue safety and conflict handling
+pytest tests/test_phase4_catalogue_safety.py -v
+
+# AI evaluation benchmark
+pytest tests/test_evaluation_benchmark.py -v
 ```
 
 ---
 
 ## 🗺️ Project Milestones & Roadmap
 
-- [x] **Phase 1: Database Persistence Tier:** 11 relational tables, SQLite WAL mode, and 23 operations functions.
+- [x] **Phase 1: Database Persistence Tier:** 11 relational tables, SQLite WAL mode, and 24 operations functions.
 - [x] **Phase 2: Service Layer & Business Rules:** Proposal, confirmation, history, and catalogue services.
 - [x] **Phase 3: Hybrid NLP & LLM Parser:** Deterministic English/Hindi/Hinglish parser with Groq/Gemini fallback.
 - [x] **Phase 4: Safety & Verification Engine:** Human-in-the-loop confirmation, 24h expiration, and single-step undo.
 - [x] **Phase 5: REST API Gateway:** 23 endpoints in FastAPI with CORS and Pydantic validation.
-- [x] **Phase 6: Mobile Web Client:** Responsive Google Stitch UI serving patient discovery and chemist workflows at `/app`.
-- [x] **Phase 7: Full Test Coverage:** 276 passing automated tests with zero regressions.
+- [x] **Phase 6: Mobile Web Client:** Responsive Google Stitch UI serving patient discovery and chemist workflows at `/app/`.
+- [x] **Phase 7: Comprehensive AI Evaluation & Production Readiness:** 333 automated tests, 100% safety abstention, and zero direct LLM inventory writes.
 - [ ] **Phase 8: Post-Hackathon Extensions:**
   - WhatsApp Business API integration for chemist stock updates.
   - Multi-city pharmacy onboarding and verification registry.

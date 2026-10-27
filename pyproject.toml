@@ -1,11 +1,11 @@
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "medibridge"
 version = "0.1.0"
-description = "Hyperlocal medicine-availability assistant for Delhi NCR"
+description = "Hyperlocal Medicine Availability Platform (Delhi NCR)"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
@@ -23,12 +23,12 @@ dev = [
 ]
 
 [tool.setuptools.packages.find]
-where = ["src"]
+where = ["src", "."]
+include = ["medibridge*", "medibridge_db*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src"]
+pythonpath = ["src", "."]
 
 [tool.vercel]
 entrypoint = "api.main:app"
-
