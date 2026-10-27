@@ -99,7 +99,7 @@ _LOW_KEYWORDS = re.compile(
 
 # In stock keywords
 _IN_KEYWORDS = re.compile(
-    r"\b(available|in\s+stock|in-stock|hai|uplabdh|mil\s+jayega|present|rakha\s+hai|stock\s+me)\b",
+    r"\b(available|in\s+stock|in-stock|hai|uplabdh|mil\s+jayega|present|rakha\s+hai|stock\s+me|add|added|daal\s+do|daalo?)\b",
     re.IGNORECASE,
 )
 
@@ -117,7 +117,8 @@ _STATUS_PHRASES = re.compile(
 )
 
 _FILLER_WORDS = re.compile(
-    r"\b(in|of|ke|ka|ki|ko|se|bhi|mein|me|par|pe|bhaiya|sir|ji|hain?|"
+    r"\b(add|added|update|put|please|pls|plz|kindly|kripya|daal\s+do|daalo?|jod\s+do|jodo?|"
+    r"in|of|ke|ka|ki|ko|se|bhi|mein|me|par|pe|bhaiya|sir|ji|hain?|"
     r"tha|thi|the|bache?|bacha|left|stock|only|sirf|khatam|khtm|nahi|"
     r"nahin|available|uplabdh|present|count|quantity|is|are|remain|remains|remaining|finish|finished|rakha)\b",
     re.IGNORECASE,
