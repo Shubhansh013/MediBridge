@@ -1,0 +1,28 @@
+# Excluded files (as requested by user)
+bot.py
+dashboard.py
+medibridge_dashboard.py
+mock_db.py
+
+# Python virtual environment and caches
+.venv/
+env/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Testing and development files
+tests/
+.pytest_cache/
+test_api_check.py
+run.py
+
+# SQLite temporary WAL/SHM files (main medibridge.db is included for seed data)
+*.db-shm
+*.db-wal
+
+# Version control and agent metadata
+.git/
+.gitignore
+.claude/

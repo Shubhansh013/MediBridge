@@ -92,17 +92,27 @@ The parser does **not** directly write to the inventory database.
 
 MediBridge is being developed using a modular Python architecture. The Telegram interface and Streamlit dashboard are intended to use shared Python services rather than duplicate business logic.
 
+**Default local entry point:** FastAPI server (`python -m uvicorn api.main:app --reload`)
+
+- **Browser/-mobile clients:** Open [http://127.0.0.1:8000/app/](http://127.0.0.1:8000/app/) for the interactive Stitch-designed mobile web UI.
+- **API/programmatic clients:** [http://127.0.0.1:8000/api/docs](http://127.0.0.1:8000/api/docs) (Swagger UI) or [http://127.0.0.1:8000/](http://127.0.0.1:8000/) for JSON metadata.
+
+### Legacy/Optional Tools (still available but not the default)
+
+- **Streamlit dashboard:** Run with `streamlit run medibridge_dashboard.py` (provides inventory and proposal management via a desktop-style web interface). The older `dashboard.py` is the minimal demo version.
+- **Telegram bot:** Run with `python bot.py` (dual patient/chemist mode). Requires `TELEGRAM_BOT_TOKEN` in `.env`.
+
+The shared Python services (message parsing, catalogue search, proposal orchestration, inventory history/undo) are used by both the FastAPI gateway, the Streamlit dashboard, and the Telegram bot rather than duplicating business logic.
+
 ```mermaid
 flowchart TB
-    A[Telegram Interface] --> D[Shared Python Services]
-    B[Streamlit Dashboard] --> D
+    A[Chemist / Patient] -->|Telegram messages| D[Shared Python Services]
+    B[Streamlit Dashboard] -->|Web UI| D
+    C[FastAPI Gateway] -->|REST calls| D
     D --> E[Message Parsing and Validation]
-    D --> F[Authorization and Confirmation]
-    D --> G[Inventory and Audit Workflows]
-    E --> H[Database Operations]
-    F --> H
-    G --> H
-    H --> I[(SQLite Database)]
+    D --> F[Catalogue Resolution]
+    D --> G[Authorization and Confirmation]
+    D --> H[Inventory History and Undo]
 ```
 
 **Architecture principles**

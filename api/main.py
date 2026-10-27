@@ -18,7 +18,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from fastapi import Depends, FastAPI, HTTPException, Query, status
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 import sqlalchemy as sa
@@ -317,14 +317,44 @@ except Exception:
 
 # ── Root & Health ───────────────────────────────────────────────────────────
 
+# Serve the mobile web app at /app for zero-setup browser preview on mobile/desktop.
+# The / mount is intentionally omitted to avoid route conflicts with API endpoints.
+try:
+    from fastapi.staticfiles import StaticFiles
+    app.mount("/app", StaticFiles(directory="static", html=True), name="static-app")
+except Exception:
+    # Static files mount failure is non-fatal; app continues without UI serving
+    pass
+
+
+# Dependency to get the current request for client detection
+def _get_request(request: Request) -> Request:
+    return request
+
+
 @app.get("/", include_in_schema=False)
-async def root():
-    return {
-        "service": "MediBridge REST API Gateway",
-        "status": "online",
-        "version": "1.0.0",
-        "docs": "/api/docs",
-    }
+async def root(request: Request = Depends(_get_request)):
+    """Redirect root to /app/ for browser clients, return JSON for API callers.
+
+    - Browser clients (entering http://127.0.0.1:8000/) are redirected to the
+      interactive MediBridge mobile web UI at http://127.0.0.1:8000/app/.
+    - API/programmatic clients that send Accept: application/json or use
+      ?format=json receive the service metadata JSON unchanged.
+    """
+    # Check if client accepts JSON
+    accept_header = request.headers.get("accept", "")
+    if "application/json" in accept_header:
+        return {
+            "service": "MediBridge REST API Gateway",
+            "status": "online",
+            "version": "1.0.0",
+            "docs": "/api/docs",
+        }
+    # Browser client: redirect to the mobile web app
+    raise HTTPException(
+        status_code=307,
+        detail="Redirecting to /app/",
+    )
 
 
 @app.get("/api/health", response_model=APIHealth, tags=["health"])
