@@ -276,6 +276,7 @@ def process_stock_message(
         assert matched_med is not None
         assert confidence is not None
         catalogue_matches[item.medicine_name] = {
+            "brand_name": matched_med.brand_name,
             "salt": matched_med.generic_name,
             "strength": resolved_strength,
             "form": resolved_form,

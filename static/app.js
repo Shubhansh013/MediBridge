@@ -625,6 +625,15 @@ function onPharmacyChange() {
 
   showToast(`Switched active pharmacy to ${state.activePharmacyName}`, 'success');
   updateProposalBadgeCount();
+
+  // Reload proposals immediately so stale proposals from the previous pharmacy are not displayed
+  loadPendingProposals();
+
+  // If chemist inventory view is active, reload inventory as well
+  const inventoryView = document.getElementById('view-chemist-inventory');
+  if (inventoryView && inventoryView.classList.contains('active')) {
+    loadPharmacyInventory();
+  }
 }
 
 // ================= CHEMIST MODULE: NLP STOCK PROPOSAL =================
@@ -766,7 +775,8 @@ async function loadPendingProposals() {
     }
 
     container.innerHTML = proposals.map(p => {
-      const confidencePct = Math.round((p.confidence_score || 1.0) * 100);
+      const rawConfidence = (p.confidence != null) ? p.confidence : (p.confidence_score != null ? p.confidence_score : 1.0);
+      const confidencePct = Math.round(rawConfidence * 100);
       const isFlagged = p.flagged_for_review;
       const reviewNotice = isFlagged
         ? `<div class="badge badge-schedule-h" style="margin-top: 4px;">⚠️ Review Flagged (Confidence < 80% or Schedule H)</div>`
@@ -774,12 +784,26 @@ async function loadPendingProposals() {
 
       const expiryText = p.expires_at ? `Expires in ~24h` : '';
 
+      // Medicine title: Canonical brand name, or parsed generic salt with strength, or fallback to Proposal #ID
+      let medTitle = p.brand_name;
+      if (!medTitle && p.parsed_salt) {
+        medTitle = p.parsed_salt + (p.parsed_strength ? ` ${p.parsed_strength}` : '');
+      }
+      if (!medTitle) {
+        medTitle = `Proposal #${p.id}`;
+      }
+
+      // Status and quantity
+      const proposedStatus = p.parsed_intent || p.proposed_status || 'IN_STOCK';
+      const quantityVal = p.parsed_quantity != null ? p.parsed_quantity : p.proposed_quantity;
+      const quantityText = quantityVal != null ? `(${quantityVal} units)` : '';
+
       return `
         <div class="card proposal-card ${isFlagged ? 'flagged' : ''}" id="proposal-card-${p.id}">
           <div class="card-header">
             <div>
-              <div class="card-title">${escapeHtml(p.medicine_brand_name || 'Medicine #' + p.medicine_id)}</div>
-              <div class="card-meta">Proposed: <strong>${escapeHtml(p.proposed_status)}</strong> ${p.proposed_quantity != null ? `(${p.proposed_quantity} units)` : ''}</div>
+              <div class="card-title">${escapeHtml(medTitle)}</div>
+              <div class="card-meta">Proposed: <strong>${escapeHtml(proposedStatus)}</strong> ${quantityText}</div>
             </div>
             <span class="badge badge-pending">PENDING</span>
           </div>
@@ -795,10 +819,10 @@ async function loadPendingProposals() {
           ${reviewNotice}
 
           <div class="proposal-actions">
-            <button class="btn btn-success" style="flex: 1;" onclick="confirmProposal(${p.id})">
+            <button class="btn btn-success" style="flex: 1;" onclick="confirmProposal(${p.id}, ${p.pharmacy_id})">
               ✓ Confirm & Apply
             </button>
-            <button class="btn btn-danger" onclick="rejectProposal(${p.id})">
+            <button class="btn btn-danger" onclick="rejectProposal(${p.id}, ${p.pharmacy_id})">
               ✕ Reject
             </button>
           </div>
@@ -812,28 +836,44 @@ async function loadPendingProposals() {
   }
 }
 
-async function confirmProposal(proposalId) {
+function formatApiError(detail, fallback) {
+  if (!detail) return fallback || 'Operation failed';
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail)) {
+    return detail.map(item => item.msg || item.message || JSON.stringify(item)).join('; ');
+  }
+  if (typeof detail === 'object') {
+    return detail.message || detail.msg || JSON.stringify(detail);
+  }
+  return String(detail);
+}
+
+async function confirmProposal(proposalId, proposalPharmacyId) {
   const card = document.getElementById(`proposal-card-${proposalId}`);
   if (card) {
     card.style.opacity = '0.5';
     card.style.pointerEvents = 'none';
   }
 
+  // Use the proposal's actual owning pharmacy_id, falling back to active pharmacy
+  const targetPharmacyId = proposalPharmacyId || state.activePharmacyId;
+
   try {
     const res = await fetch(`${API_BASE}/proposals/${proposalId}/confirm`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        chemist_user_id: state.chemistUserId,
-        pharmacy_id: state.activePharmacyId
+        confirm_by_user_id: state.chemistUserId,
+        pharmacy_id: targetPharmacyId
       })
     });
 
     const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Confirmation failed');
+    if (!res.ok) throw new Error(formatApiError(data.detail, 'Confirmation failed'));
 
     showToast('Stock update confirmed and applied!', 'success');
     loadPendingProposals();
+    updateProposalBadgeCount();
   } catch (err) {
     showToast(err.message, 'error');
     if (card) {
@@ -843,25 +883,39 @@ async function confirmProposal(proposalId) {
   }
 }
 
-async function rejectProposal(proposalId) {
+async function rejectProposal(proposalId, proposalPharmacyId) {
+  const card = document.getElementById(`proposal-card-${proposalId}`);
+  if (card) {
+    card.style.opacity = '0.5';
+    card.style.pointerEvents = 'none';
+  }
+
+  // Use the proposal's actual owning pharmacy_id, falling back to active pharmacy
+  const targetPharmacyId = proposalPharmacyId || state.activePharmacyId;
+
   try {
     const res = await fetch(`${API_BASE}/proposals/${proposalId}/reject`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        chemist_user_id: state.chemistUserId,
-        pharmacy_id: state.activePharmacyId,
-        rejection_reason: 'Rejected by chemist via mobile UI'
+        reject_by_user_id: state.chemistUserId,
+        pharmacy_id: targetPharmacyId,
+        rejection_note: 'Rejected by chemist via mobile UI'
       })
     });
 
     const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Rejection failed');
+    if (!res.ok) throw new Error(formatApiError(data.detail, 'Rejection failed'));
 
     showToast('Proposal rejected without changing stock', 'warning');
     loadPendingProposals();
+    updateProposalBadgeCount();
   } catch (err) {
     showToast(err.message, 'error');
+    if (card) {
+      card.style.opacity = '1';
+      card.style.pointerEvents = 'auto';
+    }
   }
 }
 

@@ -152,6 +152,7 @@ def adapt_parsed_item(
     item: ParsedMedicineStockItem,
     raw_message: str,
     *,
+    brand_name: Optional[str] = None,
     salt: Optional[str] = None,
     strength: Optional[str] = None,
     form: Optional[str] = None,
@@ -202,7 +203,7 @@ def adapt_parsed_item(
 
     # 4. Construct valid database proposal payload
     return ParsedProposalInput(
-        brand_name=item.medicine_name,
+        brand_name=brand_name or item.medicine_name,
         parsed_salt=resolved_salt.strip(),
         parsed_strength=resolved_strength.strip(),
         parsed_form=resolved_form.strip() if resolved_form else None,
@@ -255,6 +256,7 @@ def adapt_stock_proposal(
         adapted = adapt_parsed_item(
             item=item,
             raw_message=proposal.raw_message,
+            brand_name=item_ctx.get("brand_name"),
             salt=item_ctx.get("salt"),
             strength=item_ctx.get("strength"),
             form=item_ctx.get("form"),

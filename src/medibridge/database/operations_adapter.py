@@ -588,12 +588,67 @@ class DBOperationsAdapter:
 
             # If the database proposal is currently PENDING, Member 2's apply_confirmed_proposal
             # requires it to be transitioned to CONFIRMED so that its status check passes.
+            # Also, if the target pharmacy does not yet have an inventory row for this catalogue medicine,
+            # initialize a baseline inventory row (quantity=0, OUT_OF_STOCK) in the same transaction
+            # so apply_confirmed_proposal can record audit history and update inventory atomically.
             try:
-                from medibridge_db.models import StockProposal as DBStockProposal, ProposalStatus as DBProposalStatus
+                import sqlalchemy as sa
+                from medibridge_db.models import (
+                    StockProposal as DBStockProposal,
+                    ProposalStatus as DBProposalStatus,
+                    Inventory as DBInventory,
+                    Medicine as DBMedicine,
+                    StockStatus as DBStockStatus,
+                    UpdateSource as DBUpdateSource,
+                )
                 db_prop = sess.get(DBStockProposal, proposal_id)
-                if db_prop is not None and (db_prop.status == DBProposalStatus.pending or str(db_prop.status).upper() == "PENDING"):
-                    db_prop.status = DBProposalStatus.confirmed
-                    sess.flush()
+                if db_prop is not None:
+                    if db_prop.status == DBProposalStatus.pending or str(db_prop.status).upper() == "PENDING":
+                        db_prop.status = DBProposalStatus.confirmed
+                        sess.flush()
+
+                    # Find catalogue medicine for this proposal
+                    med_stmt = sa.select(DBMedicine).where(
+                        DBMedicine.generic_name.ilike(db_prop.parsed_salt),
+                        DBMedicine.strength == db_prop.parsed_strength,
+                        DBMedicine.form == db_prop.parsed_form,
+                    )
+                    if db_prop.brand_name is not None:
+                        med_stmt = med_stmt.where(DBMedicine.brand_name == db_prop.brand_name)
+                    target_med = sess.execute(med_stmt).scalar_one_or_none()
+                    if target_med is None and db_prop.brand_name is None:
+                        med_stmt2 = sa.select(DBMedicine).where(
+                            DBMedicine.generic_name == db_prop.parsed_salt,
+                            DBMedicine.strength == db_prop.parsed_strength,
+                            DBMedicine.form == db_prop.parsed_form,
+                        )
+                        all_meds = sess.execute(med_stmt2).scalars().all()
+                        if len(all_meds) == 1:
+                            target_med = all_meds[0]
+
+                    if target_med is not None:
+                        # Check whether this pharmacy has an inventory row for target_med
+                        inv_stmt = sa.select(DBInventory).where(
+                            DBInventory.pharmacy_id == pharmacy_id,
+                            DBInventory.medicine_id == target_med.id,
+                        ).with_for_update()
+                        existing_inv = sess.execute(inv_stmt).scalar_one_or_none()
+                        if existing_inv is None:
+                            try:
+                                with sess.begin_nested():
+                                    new_inv = DBInventory(
+                                        pharmacy_id=pharmacy_id,
+                                        medicine_id=target_med.id,
+                                        stock_status=DBStockStatus.out_of_stock,
+                                        quantity=0,
+                                        last_confirmed_at=current_time,
+                                        last_updated_by=confirmed_by_user_id,
+                                        last_update_source=DBUpdateSource.chemist,
+                                    )
+                                    sess.add(new_inv)
+                                    sess.flush()
+                            except Exception:
+                                sess.expire_all()
             except Exception:
                 pass
 

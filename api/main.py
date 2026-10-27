@@ -178,14 +178,17 @@ class CreateProposalResponse(BaseModel):
 
 
 class ProposalConfirmRequest(BaseModel):
-    confirm_by_user_id: int = Field(..., description="User ID confirming the proposal")
+    confirm_by_user_id: Optional[int] = Field(None, description="User ID confirming the proposal")
+    chemist_user_id: Optional[int] = Field(None, description="Fallback chemist user ID")
     pharmacy_id: Optional[int] = None
 
 
 class ProposalRejectRequest(BaseModel):
-    reject_by_user_id: int = Field(..., description="User ID rejecting the proposal")
+    reject_by_user_id: Optional[int] = Field(None, description="User ID rejecting the proposal")
+    chemist_user_id: Optional[int] = Field(None, description="Fallback chemist user ID")
     pharmacy_id: Optional[int] = None
     rejection_note: Optional[str] = None
+    rejection_reason: Optional[str] = None
 
 
 class UndoRequest(BaseModel):
@@ -789,7 +792,7 @@ async def confirm_proposal_endpoint(
     db: Session = Depends(get_db),
 ):
     """Confirm a PENDING proposal: atomically updates inventory and writes stock history."""
-    uid = payload.confirm_by_user_id if payload else confirm_by_user_id
+    uid = (payload.confirm_by_user_id or payload.chemist_user_id) if payload else confirm_by_user_id
     if uid is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -848,8 +851,8 @@ async def reject_proposal_endpoint(
     db: Session = Depends(get_db),
 ):
     """Reject a pending proposal without modifying inventory."""
-    uid = payload.reject_by_user_id if payload else reject_by_user_id
-    note = (payload.rejection_note if payload else None) or rejection_note
+    uid = (payload.reject_by_user_id or payload.chemist_user_id) if payload else reject_by_user_id
+    note = ((payload.rejection_note or payload.rejection_reason) if payload else None) or rejection_note
     if uid is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
