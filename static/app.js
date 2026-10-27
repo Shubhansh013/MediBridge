@@ -287,9 +287,9 @@ async function loadNearbyPharmacies() {
 
     container.innerHTML = pharmacies.map(ph => {
       const dist = ph.distance_km != null ? (state.isGpsLocation ? `${ph.distance_km.toFixed(1)} km from you` : `~${ph.distance_km.toFixed(1)} km (Saket ref)`) : '';
-      const verifiedBadge = ph.is_verified
-        ? `<span class="badge badge-in-stock">Verified</span>`
-        : `<span class="badge badge-low-stock">Unverified</span>`;
+ const verifiedBadge = String(ph.verification_state || '').toLowerCase() === 'verified'
+  ? `<span class="badge badge-in-stock">Verified</span>`
+  : `<span class="badge badge-low-stock">Unverified</span>`;
 
       return `
         <div class="card">
@@ -924,8 +924,7 @@ function renderInventory(items) {
     return `
       <div class="card">
         <div class="card-header">
-          <div>
-            <div class="card-title">${escapeHtml(it.brand_name || 'Medicine #' + it.medicine_id)}</div>
+          <div><div class="card-title">${escapeHtml(it.medicine_name || it.brand_name || 'Medicine #' + it.medicine_id)}</div>
             <div class="card-meta">${escapeHtml(it.generic_salt || '')} • ${escapeHtml(it.strength || '')}</div>
           </div>
           ${statusBadge}
