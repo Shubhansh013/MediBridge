@@ -93,25 +93,257 @@
         </div>
       </section>
 
-      <!-- Patient View 3: Information & Safety -->
+      <!-- Patient View: Dedicated Substitute Availability -->
+      <section id="view-substitute-availability" class="view-section">
+        <div class="substitute-view-header">
+          <button class="back-link" onclick="backFromSubstituteAvailability()">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="19" y1="12" x2="5" y2="12"></line>
+              <polyline points="12 19 5 12 12 5"></polyline>
+            </svg>
+            <span>Back to Search &amp; Substitutes</span>
+          </button>
+        </div>
+
+        <div class="card substitute-hero-card">
+          <div class="card-header">
+            <div>
+              <div id="sub-page-brand" class="card-title" style="font-size: 1.15rem; color: var(--primary);">--</div>
+              <div id="sub-page-salt" class="card-meta" style="font-size: 0.85rem;">--</div>
+            </div>
+            <div id="sub-page-badge"></div>
+          </div>
+          <div id="sub-page-meta" style="font-size: 0.78rem; color: var(--slate-600); margin-top: 8px;">--</div>
+        </div>
+
+        <!-- Phase 3: Prominent Medical-Safety Disclaimer -->
+        <div class="substitute-safety-notice">
+          <div class="safety-notice-header">
+            <span class="safety-notice-icon">⚠️</span>
+            <span class="safety-notice-title">IMPORTANT MEDICINE SAFETY NOTICE</span>
+          </div>
+          <p class="safety-notice-body">
+            This medicine is listed as a potential alternative, not a guaranteed replacement. Before switching to or taking it, consult your doctor or a qualified pharmacist to confirm that it is suitable for you. Contact the pharmacy directly to reconfirm availability before visiting.
+          </p>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; margin: 16px 0 10px 0;">
+          <h3 style="font-size: 0.95rem; font-weight: 700; color: var(--slate-900);">Pharmacies Stocking This Medicine</h3>
+          <button class="btn btn-secondary btn-sm" onclick="refreshSubstituteAvailability()">↻ Refresh</button>
+        </div>
+
+        <div id="substitute-pharmacies-list">
+          <!-- Populated dynamically via JS -->
+        </div>
+      </section>
+
+      <!-- Patient View 3: Information & Help Centre -->
       <section id="view-info" class="view-section">
-        <h2 class="section-title">Verified Medicine Platform</h2>
-        <p class="section-subtitle">Architecture-aware healthcare connectivity</p>
+        <h2 class="section-title">About & Help Centre</h2>
+        <p class="section-subtitle">Platform guidelines, verification safeguards, and support</p>
 
-        <div class="card">
-          <div class="card-title" style="margin-bottom: 8px;">🛡️ Safe & Regulated</div>
-          <p style="font-size: 0.85rem; color: var(--slate-600); margin-bottom: 10px;">
-            Schedule H prescription drugs are strictly flagged for licensed pharmacist verification. No stock update occurs automatically without human confirmation.
-          </p>
-          <div class="badge badge-schedule-h">Schedule H Compliant</div>
-        </div>
+        <!-- Section 1: About MediBridge -->
+        <details class="about-accordion" open>
+          <summary class="about-summary">
+            <span class="about-summary-title">
+              <span class="about-summary-icon">💊</span>
+              About MediBridge
+            </span>
+            <svg class="about-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+          </summary>
+          <div class="about-content">
+            <p>
+              <strong>MediBridge</strong> connects patients to verified independent pharmacies across Delhi NCR to eliminate the frantic physical hunt for medicines during critical moments.
+            </p>
+            <p>
+              It provides a shared real-time availability network where inventory changes require verified human confirmation before going live.
+            </p>
 
-        <div class="card">
-          <div class="card-title" style="margin-bottom: 8px;">⏱️ Freshness & Transparency</div>
-          <p style="font-size: 0.85rem; color: var(--slate-600);">
-            Inventory unconfirmed for more than 24 hours is visibly flagged as stale to prevent patient inconvenience.
-          </p>
-        </div>
+            <h4>Implemented Features</h4>
+            <ul class="about-list">
+              <li><span class="about-tag implemented">Live</span> <strong>Medicine Search:</strong> Search by brand, generic salt, or Hinglish alias.</li>
+              <li><span class="about-tag implemented">Live</span> <strong>Nearby Pharmacies:</strong> Haversine distance tracking to verified local shops.</li>
+              <li><span class="about-tag implemented">Live</span> <strong>Salt-Equivalent Substitutes:</strong> Direct identification of therapeutic matches.</li>
+              <li><span class="about-tag implemented">Live</span> <strong>Freshness Indicators:</strong> Visual staleness badges for records unconfirmed for &gt;24h.</li>
+              <li><span class="about-tag implemented">Live</span> <strong>Natural Language Stock Updates:</strong> Chemist chat parsing with 5-stage NLP.</li>
+              <li><span class="about-tag implemented">Live</span> <strong>Audit History &amp; 1-Tap Undo:</strong> Append-only log with instant rollback.</li>
+              <li><span class="about-tag planned">Planned</span> <strong>Patient SOS Broadcasts:</strong> Emergency pharmacy alerts (under development).</li>
+              <li><span class="about-tag planned">Planned</span> <strong>Direct Doctor Consultations:</strong> Clinical telemedicine integration.</li>
+            </ul>
+
+            <h4>30-Second Quick-Start Guide</h4>
+            <ol class="about-steps">
+              <li><strong>Search Medicine:</strong> Tap <em>Search</em> and enter a medicine name (e.g. <code>Dolo 650</code> or <code>Paracetamol</code>).</li>
+              <li><strong>Check Status:</strong> Review real-time availability badges and salt-equivalent substitutes.</li>
+              <li><strong>Locate Pharmacy:</strong> Switch to <em>Nearby</em> to see pharmacy addresses and approximate distances.</li>
+              <li><strong>Verify Before Visit:</strong> Note the last-updated timestamp and reconfirm with the pharmacy before travelling.</li>
+            </ol>
+          </div>
+        </details>
+
+        <!-- Section 2: Patient & Chemist Guidelines -->
+        <details class="about-accordion">
+          <summary class="about-summary">
+            <span class="about-summary-title">
+              <span class="about-summary-icon">📋</span>
+              Patient &amp; Chemist Guidelines
+            </span>
+            <svg class="about-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+          </summary>
+          <div class="about-content">
+            <div class="about-card-sub patient">
+              <strong>🤒 For Patients:</strong>
+              <ul class="about-list" style="margin-top: 6px;">
+                <li>Search using brand names, generic formulations, or common colloquial spellings.</li>
+                <li>Review the stock badge (<em>In Stock</em>, <em>Low Stock</em>, or <em>Out of Stock</em>) and the last confirmed time.</li>
+                <li><strong>Always reconfirm with the pharmacy</strong> by calling before visiting, as counter sales may deplete stock rapidly.</li>
+                <li><strong>Salt matching does not equal interchangeability:</strong> Different brands may differ in release mechanisms, excipients, or dosage forms. Always consult your doctor or licensed pharmacist.</li>
+                <li>Schedule H medicines require a valid doctor's prescription upon physical collection.</li>
+              </ul>
+            </div>
+
+            <div class="about-card-sub chemist">
+              <strong>👨‍⚕️ For Chemists:</strong>
+              <ul class="about-list" style="margin-top: 6px;">
+                <li>Switch to <strong>Chemist Mode</strong> using the top role switcher and select your active store from the context bar.</li>
+                <li><em>Note:</em> The top role switcher is a client toggle for demo testing. In the backend, stock proposals strictly require your user account to be linked to the selected pharmacy in the database.</li>
+                <li>Submit stock updates promptly via casual chat messages (e.g., <code>Dolo 650 20 strips available</code>) or template chips.</li>
+                <li><strong>Physical Verification Required:</strong> Never confirm a proposed update without inspecting shelf inventory.</li>
+                <li>Adhere strictly to drug scheduling and prescription dispensing regulations.</li>
+              </ul>
+            </div>
+          </div>
+        </details>
+
+        <!-- Section 3: Safety, Verification & Privacy -->
+        <details class="about-accordion">
+          <summary class="about-summary">
+            <span class="about-summary-title">
+              <span class="about-summary-icon">🛡️</span>
+              Safety, Verification &amp; Privacy
+            </span>
+            <svg class="about-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+          </summary>
+          <div class="about-content">
+            <h4>Prescription &amp; Regulatory Compliance</h4>
+            <p>
+              Schedule H medicines are prominently flagged with <span class="badge badge-schedule-h">Schedule H Compliant</span> badges. These items cannot be dispensed over the counter and require a licensed doctor's prescription. MediBridge never provides dosage instructions or clinical prescribing advice.
+            </p>
+
+            <h4>Chemist Authorization &amp; Scoping</h4>
+            <p>
+              Chemist updates follow strict database scoping. If a user attempts to propose or confirm stock for a pharmacy they are not linked to in <code>user_pharmacies</code>, the backend immediately rejects the request with an authorization error (HTTP 403 Forbidden).
+            </p>
+
+            <h4>Supported Stock Statuses</h4>
+            <ul class="about-list">
+              <li><strong>🟢 In Stock:</strong> Verified units available on pharmacy shelves.</li>
+              <li><strong>🟡 Low Stock:</strong> Limited inventory remaining; contacting ahead is recommended.</li>
+              <li><strong>🔴 Out of Stock:</strong> Depleted inventory; check salt-equivalent alternatives.</li>
+              <li><strong>⏱️ Stale (&gt;24h):</strong> Unconfirmed for over 24 hours. Inventory data may not reflect recent counter sales.</li>
+            </ul>
+
+            <h4>Audit Trail &amp; Privacy Protection</h4>
+            <p>
+              Every applied change is preserved in an append-only <code>stock_history</code> audit ledger, tracking previous vs. new values and author IDs. Patient searches do not require account registration or health data tracking.
+            </p>
+          </div>
+        </details>
+
+        <!-- Section 4: Do's, Don'ts & Reporting -->
+        <details class="about-accordion">
+          <summary class="about-summary">
+            <span class="about-summary-title">
+              <span class="about-summary-icon">⚖️</span>
+              Do's, Don'ts &amp; Reporting
+            </span>
+            <svg class="about-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+          </summary>
+          <div class="about-content">
+            <h4>Do:</h4>
+            <ul class="about-list">
+              <li><strong>Do</strong> call the pharmacy to reserve medicines before travelling for urgent needs.</li>
+              <li><strong>Do</strong> check the last-verified timestamp on stock records.</li>
+              <li><strong>Do</strong> consult a qualified doctor or pharmacist before switching to equivalent salts.</li>
+              <li><strong>Do</strong> keep pharmacy inventory updated promptly when stock batches arrive or sell out.</li>
+            </ul>
+
+            <h4>Don't:</h4>
+            <ul class="about-list">
+              <li><strong>Don't</strong> assume displayed availability is an absolute legal guarantee of shelf stock.</li>
+              <li><strong>Don't</strong> treat MediBridge as a replacement for a medical prescription or emergency care.</li>
+              <li><strong>Don't</strong> confirm stock updates without physically checking actual shelf inventory.</li>
+              <li><strong>Don't</strong> attempt to submit updates for pharmacies you are not authorized to manage.</li>
+              <li><strong>Don't</strong> assume matching active ingredients are automatically interchangeable without pharmacist guidance.</li>
+            </ul>
+
+            <div class="about-card-sub warning">
+              <strong>⚠️ Reporting Inaccurate Information:</strong><br>
+              An automated in-app reporting button is <em>currently under development</em>. To avoid generating unmonitored tickets, no placeholder button is shown. If you encounter incorrect stock or pharmacy data, please notify the pharmacy directly or alert pilot administrators.
+            </div>
+          </div>
+        </details>
+
+        <!-- Section 5: FAQs, Support & App Information -->
+        <details class="about-accordion">
+          <summary class="about-summary">
+            <span class="about-summary-title">
+              <span class="about-summary-icon">❓</span>
+              FAQs, Support &amp; Information
+            </span>
+            <svg class="about-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+          </summary>
+          <div class="about-content">
+            <h4>Frequently Asked Questions</h4>
+            <ul class="about-list" style="margin-left: 0; list-style: none;">
+              <li style="margin-bottom: 10px;">
+                <strong>Q: Why are no medicines or pharmacies appearing?</strong><br>
+                <span>A: MediBridge is currently running a pilot focused on Delhi NCR (Rohini &amp; Saket). Ensure your search matches catalogued items or clear filters.</span>
+              </li>
+              <li style="margin-bottom: 10px;">
+                <strong>Q: What does a stale stock badge mean?</strong><br>
+                <span>A: The pharmacy has not confirmed availability in over 24 hours. Always contact the pharmacy directly to verify.</span>
+              </li>
+              <li style="margin-bottom: 10px;">
+                <strong>Q: What should I do if a pharmacy's displayed stock is wrong?</strong><br>
+                <span>A: Inform the pharmacy staff so they can submit a quick one-tap correction from their Chemist portal.</span>
+              </li>
+              <li style="margin-bottom: 10px;">
+                <strong>Q: Can MediBridge prescribe medicines or recommend dosage?</strong><br>
+                <span>A: Never. MediBridge is strictly an availability discovery platform. It never provides medical advice, diagnosis, or prescribing.</span>
+              </li>
+              <li style="margin-bottom: 10px;">
+                <strong>Q: What happens if a chemist confirms an update by mistake?</strong><br>
+                <span>A: The chemist can navigate to the History tab and tap <strong>Undo</strong> to instantly revert to the previous stock state.</span>
+              </li>
+              <li style="margin-bottom: 10px;">
+                <strong>Q: What should I do if a feature is unavailable?</strong><br>
+                <span>A: Features such as Patient SOS broadcasts and automated reporting are under active development and will roll out in upcoming pilot phases.</span>
+              </li>
+            </ul>
+
+            <div class="about-disclaimer">
+              <strong>Medical &amp; Availability Disclaimer:</strong><br>
+              MediBridge helps users discover medicine availability. It does not replace professional medical advice, prescribing, or emergency care. Stock information may change and should be confirmed with the pharmacy.
+            </div>
+
+            <div class="about-version-badge">
+              <span>● MediBridge Gateway v1.0.0</span> •
+              <span>SQLite WAL</span> •
+              <span>Delhi NCR Pilot</span>
+            </div>
+          </div>
+        </details>
       </section>
 
       <!-- ================= CHEMIST VIEWS ================= -->

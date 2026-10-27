@@ -15,7 +15,10 @@ const state = {
   userPharmacies: [],
   userCoords: { lat: 28.5244, lon: 77.2066 }, // Saket, New Delhi default
   searchDebounceTimer: null,
-  rawInventory: []
+  rawInventory: [],
+  lastSubstitutedSearch: null,
+  currentSelectedSubstitute: null,
+  isGpsLocation: false
 };
 
 // ================= INITIALIZATION & NAVIGATION =================
@@ -64,6 +67,7 @@ function navigateTo(viewId) {
     'view-search': 'nav-btn-search',
     'view-pharmacies': 'nav-btn-pharmacies',
     'view-info': 'nav-btn-info',
+    'view-substitute-availability': 'nav-btn-search',
     'view-chemist-update': 'nav-btn-update',
     'view-chemist-proposals': 'nav-btn-proposals',
     'view-chemist-inventory': 'nav-btn-inventory',
@@ -282,7 +286,7 @@ async function loadNearbyPharmacies() {
     }
 
     container.innerHTML = pharmacies.map(ph => {
-      const dist = ph.distance_km != null ? `${ph.distance_km.toFixed(1)} km away` : '';
+      const dist = ph.distance_km != null ? (state.isGpsLocation ? `${ph.distance_km.toFixed(1)} km from you` : `~${ph.distance_km.toFixed(1)} km (Saket ref)`) : '';
       const verifiedBadge = ph.is_verified
         ? `<span class="badge badge-in-stock">Verified</span>`
         : `<span class="badge badge-low-stock">Unverified</span>`;
@@ -322,9 +326,10 @@ async function viewPharmacyPublicInventory(pharmacyId, pharmacyName) {
   navigateTo('view-chemist-inventory');
 }
 
-// ================= PATIENT MODULE: SUBSTITUTES MODAL =================
+// ================= PATIENT MODULE: SUBSTITUTES MODAL & DEDICATED AVAILABILITY =================
 
 async function viewSubstitutes(medicineId, brandName, genericSalt) {
+  state.lastSubstitutedSearch = { medicineId, brandName, genericSalt };
   const modal = document.getElementById('substitutes-modal');
   const body = document.getElementById('substitutes-modal-body');
   document.getElementById('modal-sub-brand').textContent = `${brandName} Substitutes`;
@@ -348,20 +353,30 @@ async function viewSubstitutes(medicineId, brandName, genericSalt) {
 
     body.innerHTML = `
       <div style="font-size: 0.8rem; color: var(--slate-500); margin-bottom: 12px;">
-        Found ${data.length} therapeutic alternative(s) with identical salt & strength:
+        Found ${data.length} therapeutic alternative(s) with matching chemical formulation:
       </div>
-      ${data.map(sub => `
-        <div class="card" style="margin-bottom: 8px;">
+      ${data.map(sub => {
+        const saltName = sub.generic_name || sub.generic_salt || genericSalt || '';
+        const strengthStr = sub.strength || '';
+        const formStr = sub.form || 'Tablet';
+        const isRx = Boolean(sub.is_schedule_h);
+        return `
+        <div class="card substitute-card" onclick="selectSubstitute(${sub.id}, '${escapeHtml(sub.brand_name)}', '${escapeHtml(saltName)}', '${escapeHtml(strengthStr)}', '${escapeHtml(formStr)}', ${isRx})" style="margin-bottom: 10px; cursor: pointer;">
           <div class="card-header">
             <div>
               <div class="card-title">${escapeHtml(sub.brand_name)}</div>
-              <div class="card-meta">${escapeHtml(sub.generic_salt)} • ${escapeHtml(sub.strength)}</div>
+              <div class="card-meta">${escapeHtml(saltName)} • ${escapeHtml(strengthStr)}</div>
             </div>
-            ${sub.is_schedule_h ? '<span class="badge badge-schedule-h">Rx</span>' : ''}
+            ${isRx ? '<span class="badge badge-schedule-h">Rx Required</span>' : '<span class="badge badge-in-stock">OTC</span>'}
           </div>
-          <div style="font-size: 0.75rem; color: var(--slate-500);">Form: ${escapeHtml(sub.form || 'Tablet')}</div>
-        </div>
-      `).join('')}`;
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px;">
+            <span style="font-size: 0.75rem; color: var(--slate-500);">Form: ${escapeHtml(formStr)}</span>
+            <button class="btn btn-primary btn-sm" onclick="event.stopPropagation(); selectSubstitute(${sub.id}, '${escapeHtml(sub.brand_name)}', '${escapeHtml(saltName)}', '${escapeHtml(strengthStr)}', '${escapeHtml(formStr)}', ${isRx})">
+              Check Stock &amp; Stores →
+            </button>
+          </div>
+        </div>`;
+      }).join('')}`;
 
   } catch (err) {
     body.innerHTML = `<div class="empty-state"><p style="color: var(--danger);">${escapeHtml(err.message)}</p></div>`;
@@ -372,10 +387,200 @@ function closeSubstitutesModal() {
   document.getElementById('substitutes-modal').style.display = 'none';
 }
 
+function selectSubstitute(medicineId, brandName, genericSalt, strength, form, isScheduleH) {
+  closeSubstitutesModal();
+  state.currentSelectedSubstitute = { medicineId, brandName, genericSalt, strength, form, isScheduleH };
+
+  const brandEl = document.getElementById('sub-page-brand');
+  const saltEl = document.getElementById('sub-page-salt');
+  const metaEl = document.getElementById('sub-page-meta');
+  const badgeEl = document.getElementById('sub-page-badge');
+
+  if (brandEl) brandEl.textContent = brandName;
+  if (saltEl) saltEl.textContent = genericSalt ? `Active Salt: ${genericSalt}` : '';
+  if (metaEl) metaEl.textContent = `Formulation: ${form || 'Tablet'} • Strength: ${strength || 'Standard'}`;
+  if (badgeEl) {
+    badgeEl.innerHTML = isScheduleH
+      ? '<span class="badge badge-schedule-h">Schedule H (Rx Required)</span>'
+      : '<span class="badge badge-in-stock">OTC / General</span>';
+  }
+
+  navigateTo('view-substitute-availability');
+  loadSubstitutePharmacies(medicineId);
+}
+
+function backFromSubstituteAvailability() {
+  navigateTo('view-search');
+  if (state.lastSubstitutedSearch) {
+    const { medicineId, brandName, genericSalt } = state.lastSubstitutedSearch;
+    viewSubstitutes(medicineId, brandName, genericSalt);
+  }
+}
+
+function refreshSubstituteAvailability() {
+  if (state.currentSelectedSubstitute) {
+    loadSubstitutePharmacies(state.currentSelectedSubstitute.medicineId);
+  }
+}
+
+async function loadSubstitutePharmacies(medicineId) {
+  const container = document.getElementById('substitute-pharmacies-list');
+  if (!container) return;
+
+  const currentMed = state.currentSelectedSubstitute;
+  const medName = currentMed ? currentMed.brandName : 'medicine';
+
+  container.innerHTML = `
+    <div class="empty-state">
+      <div class="spinner"></div>
+      <p style="margin-top: 10px;">Checking verified pharmacies stocking ${escapeHtml(medName)}...</p>
+    </div>`;
+
+  try {
+    const url = `${API_BASE}/medicines/${medicineId}/pharmacies?lat=${state.userCoords.lat}&lon=${state.userCoords.lon}`;
+    const res = await fetch(url);
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.detail || `Server returned HTTP ${res.status}`);
+    }
+    const pharmacies = await res.json();
+
+    if (!pharmacies || pharmacies.length === 0) {
+      container.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-icon">🏪</div>
+          <div style="font-weight: 700; color: var(--slate-800); margin-bottom: 6px;">No Confirmed Stock Found</div>
+          <p style="font-size: 0.82rem; color: var(--slate-600); margin-bottom: 14px; max-width: 320px; margin-left: auto; margin-right: auto;">
+            No confirmed availability found for this medicine. You can explore other alternatives or check again later.
+          </p>
+          <button class="btn btn-secondary btn-sm" onclick="backFromSubstituteAvailability()">
+            ← Explore Other Alternatives
+          </button>
+        </div>`;
+      return;
+    }
+
+    const locationNoticeHtml = state.isGpsLocation
+      ? `<div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: var(--radius-sm); padding: 8px 12px; font-size: 0.76rem; color: #166534; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between;">
+           <span>📍 Distances calculated from your live GPS location</span>
+           <span style="font-weight: 700;">Live GPS</span>
+         </div>`
+      : `<div style="background: #f8fafc; border: 1px solid var(--slate-200); border-radius: var(--radius-sm); padding: 8px 12px; font-size: 0.76rem; color: var(--slate-600); margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between;">
+           <span>📍 Distances use <strong>Saket, New Delhi</strong> default reference location.</span>
+           <button class="btn btn-secondary btn-sm" style="padding: 2px 8px; font-size: 0.72rem;" onclick="requestGpsForSubstitutes()">Use My GPS</button>
+         </div>`;
+
+    container.innerHTML = locationNoticeHtml + pharmacies.map(ph => {
+      let statusBadge = '';
+      let freshnessHtml = '';
+      let qtyStr = '';
+
+      if (ph.is_stale) {
+        // Explicit requirement: STALE — availability not recently verified.
+        freshnessHtml = `<div class="stale-alert-badge" style="background: #fffbeb; color: #92400e; border: 1px solid #fde68a; border-radius: 6px; padding: 3px 8px; font-size: 0.72rem; font-weight: 700; display: inline-flex; align-items: center; gap: 4px; margin-top: 4px;">⏱️ STALE — availability not recently verified.</div>`;
+
+        if (ph.stock_status === 'OUT_OF_STOCK') {
+          statusBadge = `<span class="badge badge-out-of-stock">✕ Out of Stock</span>`;
+        } else if (ph.stock_status === 'LOW_STOCK') {
+          statusBadge = `<span class="badge" style="background: #fef3c7; color: #92400e; border: 1px solid #fde68a; font-weight: 600;">Unverified Low Stock (Stale)</span>`;
+        } else {
+          statusBadge = `<span class="badge" style="background: #fef3c7; color: #92400e; border: 1px solid #fde68a; font-weight: 600;">Unverified Stock (Stale)</span>`;
+        }
+
+        if (ph.quantity != null && ph.stock_status !== 'OUT_OF_STOCK') {
+          qtyStr = `<div style="font-size: 0.74rem; color: #92400e; margin-top: 4px;">⚠️ Last recorded quantity: <strong>${ph.quantity} units</strong> (may be outdated)</div>`;
+        }
+      } else {
+        if (ph.stock_status === 'IN_STOCK') {
+          statusBadge = `<span class="badge badge-in-stock">● Confirmed In Stock</span>`;
+        } else if (ph.stock_status === 'LOW_STOCK') {
+          statusBadge = `<span class="badge badge-low-stock">▲ Confirmed Low Stock</span>`;
+        } else {
+          statusBadge = `<span class="badge badge-out-of-stock">✕ Out of Stock</span>`;
+        }
+
+        if (ph.last_confirmed_at) {
+          try {
+            const d = new Date(ph.last_confirmed_at);
+            const timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            freshnessHtml = `<span style="font-size: 0.72rem; color: var(--success); font-weight: 600;">✓ Confirmed today (${timeStr})</span>`;
+          } catch (_) {
+            freshnessHtml = `<span style="font-size: 0.72rem; color: var(--success); font-weight: 600;">✓ Confirmed recently</span>`;
+          }
+        }
+
+        if (ph.quantity != null && ph.stock_status !== 'OUT_OF_STOCK') {
+          qtyStr = `<div style="font-size: 0.74rem; color: var(--slate-600); font-weight: 600; margin-top: 4px;">Confirmed quantity: ${ph.quantity} units</div>`;
+        }
+      }
+
+      let distStr = '';
+      if (ph.distance_km != null) {
+        distStr = state.isGpsLocation
+          ? `📍 ${ph.distance_km} km from you`
+          : `📍 ~${ph.distance_km} km (from Saket ref)`;
+      }
+
+      const lat = ph.latitude;
+      const lon = ph.longitude;
+      const phName = escapeHtml(ph.pharmacy_name);
+
+      return `
+        <div class="card" style="margin-bottom: 10px;">
+          <div class="card-header">
+            <div>
+              <div class="card-title">${phName}</div>
+              <div class="card-meta">${escapeHtml(ph.locality || '')}</div>
+            </div>
+            <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 4px;">
+              ${statusBadge}
+              ${freshnessHtml}
+            </div>
+          </div>
+          <div style="margin-top: 8px;">
+            ${qtyStr}
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--slate-100);">
+            <span style="font-size: 0.75rem; color: var(--slate-600); font-weight: 600;">${distStr}</span>
+            <button class="btn btn-secondary btn-sm" onclick="openDirections(${lat}, ${lon}, '${phName}')">
+              Directions ↗
+            </button>
+          </div>
+        </div>`;
+    }).join('');
+
+  } catch (err) {
+    container.innerHTML = `
+      <div class="empty-state">
+        <div style="color: var(--danger); font-weight: 600; margin-bottom: 6px;">Failed to Load Availability</div>
+        <p style="font-size: 0.8rem; color: var(--slate-600); margin-bottom: 12px;">${escapeHtml(err.message)}</p>
+        <div style="display: flex; gap: 8px; justify-content: center;">
+          <button class="btn btn-primary btn-sm" onclick="loadSubstitutePharmacies(${medicineId})">
+            ↻ Retry
+          </button>
+          <button class="btn btn-secondary btn-sm" onclick="backFromSubstituteAvailability()">
+            ← Back to Substitutes
+          </button>
+        </div>
+      </div>`;
+  }
+}
+
+function requestGpsForSubstitutes() {
+  useCurrentLocation();
+}
+
 function searchStockForMedicine(medicineId, brandName) {
-  showToast(`Checking local stock for ${brandName}...`, 'warning');
-  loadNearbyPharmacies();
-  navigateTo('view-pharmacies');
+  selectSubstitute(medicineId, brandName, '', '', 'Tablet', false);
+}
+
+function openDirections(lat, lon, name) {
+  if (lat && lon) {
+    const url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lon}`;
+    window.open(url, '_blank', 'noopener,noreferrer');
+  } else {
+    showToast(`Location coordinates not available for ${name}`, 'warning');
+  }
 }
 
 // ================= CHEMIST MODULE: CONTEXT & PHARMACY SWITCHING =================
