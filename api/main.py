@@ -193,6 +193,7 @@ class CreateProposalResponse(BaseModel):
     expires_at: Optional[str] = None
     disambiguation_options: List[MedicineSearchResult] = Field(default_factory=list)
     processing_source: Optional[str] = None
+    unresolved_items: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 class ProposalConfirmRequest(BaseModel):
@@ -758,11 +759,20 @@ async def create_stock_proposal_endpoint(
         )
 
     if result.status == ProposalServiceStatus.UNRESOLVED:
+        first_unresolved = result.unresolved_items[0] if result.unresolved_items else None
+        item_data = first_unresolved.item if first_unresolved else None
         return CreateProposalResponse(
             status="UNRESOLVED",
             message=result.reason or "One or more medicines require catalogue matching or human review.",
             proposals=[_map_proposal_record(p) for p in result.created_proposals],
             processing_source=result.processing_source,
+            brand_name=item_data.medicine_name if item_data else None,
+            parsed_intent=item_data.status.value if item_data and item_data.status else None,
+            parsed_quantity=item_data.quantity if item_data else None,
+            unresolved_items=[
+                u.model_dump(mode="json") if hasattr(u, "model_dump") else dict(u)
+                for u in result.unresolved_items
+            ],
         )
 
     # Success or Partially Created

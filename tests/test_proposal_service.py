@@ -311,6 +311,26 @@ class TestStockProposalService(unittest.TestCase):
         self.assertIn("Multiple catalogue matches", unresolved.reason)
         self.assertEqual(len(self.repo.proposals), 0)
 
+    def test_strength_conflict_returns_unresolved_with_explicit_reason(self) -> None:
+        """Contradictory strength (e.g. 500mg for Dolo 650) returns UNRESOLVED with informative reason."""
+        raw_msg = "Dolo 650 500mg 10 strips"
+        result = process_stock_message(
+            raw_message=raw_msg,
+            pharmacy_id=self.pharmacy_id,
+            chemist_user_id=self.chemist_id,
+            repository=self.repo,
+        )
+        self.assertEqual(result.status, ProposalServiceStatus.UNRESOLVED)
+        self.assertEqual(len(result.created_proposals), 0)
+        self.assertEqual(len(result.unresolved_items), 1)
+        unresolved = result.unresolved_items[0]
+        self.assertEqual(unresolved.item.medicine_name, "Dolo 650")
+        self.assertEqual(unresolved.item.strength, "500mg")
+        self.assertEqual(unresolved.item.quantity, 10)
+        self.assertIn("Strength mismatch", unresolved.reason)
+        self.assertIn("Strength mismatch", result.reason)
+        self.assertEqual(len(self.repo.proposals), 0)
+
     def test_missing_strength_returns_unresolved(self) -> None:
         """Test 5: Medicine with missing strength in both message and catalogue is UNRESOLVED."""
         # "Crocin Syrup" in catalogue has strength=None

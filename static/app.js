@@ -714,18 +714,24 @@ async function submitStockProposal() {
 
     } else {
       let errorTitle = 'Could not resolve medicine';
+      let borderCol = 'var(--danger)';
+      let titleCol = 'var(--danger)';
       const msgText = data.message || '';
       if (msgText.toLowerCase().includes('strength mismatch')) {
         errorTitle = 'Strength mismatch — review required';
+        borderCol = 'var(--warning)';
+        titleCol = '#b45309';
       } else if (msgText.toLowerCase().includes('multiple catalogue matches') || msgText.toLowerCase().includes('clarification required')) {
         errorTitle = 'Clarification required';
+        borderCol = 'var(--warning)';
+        titleCol = '#b45309';
       } else if (msgText.toLowerCase().includes('not found in catalogue')) {
         errorTitle = 'Medicine not found';
       }
 
       resultContainer.innerHTML = `
-        <div class="card" style="border-left: 4px solid var(--danger);">
-          <div style="font-weight: 700; color: var(--danger);">${escapeHtml(errorTitle)}</div>
+        <div class="card" style="border-left: 4px solid ${borderCol};">
+          <div style="font-weight: 700; color: ${titleCol};">${escapeHtml(errorTitle)}</div>
           <p style="font-size: 0.8rem; color: var(--slate-600); margin-top: 4px;">
             ${escapeHtml(msgText || `No matching brand or generic salt found for "${rawText}".`)}
           </p>

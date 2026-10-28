@@ -1047,6 +1047,158 @@ class TestEndToEndIntegrationRegression(unittest.TestCase):
         self.assertEqual(res_conflict.status, ProposalServiceStatus.UNRESOLVED)
         self.assertEqual(len(res_conflict.unresolved_items), 1)
         self.assertIn("Strength mismatch", res_conflict.unresolved_items[0].reason)
+        self.assertIn("Strength mismatch", res_conflict.reason)
+
+    # -------------------------------------------------------------------------
+    # Scenario 23: Complete strength-conflict lifecycle, safety, and API tests
+    # -------------------------------------------------------------------------
+    def test_scenario_23_strength_conflict_lifecycle_and_api(self):
+        """Scenario 23: Verifies explicit strength conflict handling, inventory safety, and API response."""
+        # 1. Dolo 650 500mg 10 strips produces explicit strength conflict
+        res_conflict = process_stock_message(
+            "Dolo 650 500mg 10 strips",
+            pharmacy_id=1,
+            chemist_user_id=3,
+            repository=self.adapter,
+            use_llm=False,
+        )
+        self.assertEqual(res_conflict.status, ProposalServiceStatus.UNRESOLVED)
+        self.assertEqual(len(res_conflict.created_proposals), 0)
+        self.assertEqual(len(res_conflict.unresolved_items), 1)
+        item = res_conflict.unresolved_items[0].item
+        self.assertEqual(item.medicine_name, "Dolo 650")
+        self.assertEqual(item.strength, "500mg")  # Explicit parsed strength preserved
+        self.assertEqual(item.quantity, 10)
+        self.assertIn("Strength mismatch for 'Dolo 650'", res_conflict.reason)
+        self.assertIn("500mg", res_conflict.reason)
+        self.assertIn("650mg", res_conflict.reason)
+
+        # 2. Received 20 strips of Dolo 650 still works
+        res_rcv = process_stock_message(
+            "Received 20 strips of Dolo 650",
+            pharmacy_id=1,
+            chemist_user_id=3,
+            repository=self.adapter,
+            use_llm=False,
+        )
+        self.assertEqual(res_rcv.status, ProposalServiceStatus.SUCCESS)
+        self.assertEqual(len(res_rcv.created_proposals), 1)
+        self.assertEqual(res_rcv.created_proposals[0].parsed_quantity, 20)
+        self.assertEqual(res_rcv.created_proposals[0].brand_name, "Dolo 650")
+
+        # 3. Dolo ka stock bees strips badha dena still works with LLM
+        mock_payload = {
+            "items": [
+                {
+                    "medicine_name": "Dolo",
+                    "status": "IN_STOCK",
+                    "quantity": 20,
+                    "dosage_form": "Strip",
+                }
+            ]
+        }
+        mock_resp = MockHTTPResponse(
+            status_code=200,
+            json_data={"choices": [{"message": {"content": json.dumps(mock_payload)}}]},
+        )
+        mock_client = MagicMock()
+        mock_client.post.return_value = mock_resp
+
+        res_llm = process_stock_message(
+            "Dolo ka stock bees strips badha dena",
+            pharmacy_id=1,
+            chemist_user_id=3,
+            repository=self.adapter,
+            use_llm=True,
+            api_key="gsk_mock_test_key",
+            http_client=mock_client,
+        )
+        self.assertEqual(res_llm.status, ProposalServiceStatus.SUCCESS)
+        self.assertEqual(len(res_llm.created_proposals), 1)
+        self.assertEqual(res_llm.processing_source, "Interpreted by LLM")
+
+        # 4. Devanagari message still works
+        res_hindi = process_stock_message(
+            "डोलो 650 के 20 पत्ते उपलब्ध हैं",
+            pharmacy_id=1,
+            chemist_user_id=3,
+            repository=self.adapter,
+            use_llm=False,
+        )
+        self.assertEqual(res_hindi.status, ProposalServiceStatus.SUCCESS)
+        self.assertEqual(len(res_hindi.created_proposals), 1)
+        self.assertEqual(res_hindi.processing_source, "Parsed by rules")
+
+        # 5. Unknown medicine remains unresolved
+        res_unk = process_stock_message(
+            "UnknownMedXYZ 10 strips",
+            pharmacy_id=1,
+            chemist_user_id=3,
+            repository=self.adapter,
+            use_llm=False,
+        )
+        self.assertEqual(res_unk.status, ProposalServiceStatus.UNRESOLVED)
+        self.assertEqual(len(res_unk.created_proposals), 0)
+        self.assertIn("not found in catalogue", res_unk.reason)
+        self.assertIn("parsed_salt", res_unk.unresolved_items[0].missing_fields)
+
+        # 6. A strength-conflicted proposal cannot change inventory
+        with self.session_factory() as sess:
+            inv_before = sess.execute(
+                select(Inventory).where(
+                    Inventory.pharmacy_id == 1,
+                    Inventory.medicine_id == 1,
+                )
+            ).scalars().first()
+            qty_before = inv_before.quantity if inv_before else None
+
+        # Re-run conflict message
+        process_stock_message(
+            "Dolo 650 500mg 10 strips",
+            pharmacy_id=1,
+            chemist_user_id=3,
+            repository=self.adapter,
+            use_llm=False,
+        )
+
+        with self.session_factory() as sess:
+            inv_after = sess.execute(
+                select(Inventory).where(
+                    Inventory.pharmacy_id == 1,
+                    Inventory.medicine_id == 1,
+                )
+            ).scalars().first()
+            qty_after = inv_after.quantity if inv_after else None
+        self.assertEqual(qty_before, qty_after, "Inventory must NOT change on strength conflict")
+
+        # Confirming a non-existent proposal fails
+        with self.assertRaises(ValueError):
+            confirm_and_apply_proposal(
+                proposal_id=999999,
+                user_id=3,
+                pharmacy_id=1,
+                repository=self.adapter,
+            )
+
+        # 7. Frontend / API verification
+        client = TestClient(app)
+        api_resp = client.post(
+            "/api/proposals",
+            json={
+                "raw_message": "Dolo 650 500mg 10 strips",
+                "chemist_user_id": 3,
+                "pharmacy_id": 1,
+            },
+        )
+        self.assertEqual(api_resp.status_code, 200)
+        data = api_resp.json()
+        self.assertEqual(data["status"], "UNRESOLVED")
+        self.assertEqual(data["proposals"], [])
+        self.assertEqual(data["brand_name"], "Dolo 650")
+        self.assertEqual(data["parsed_quantity"], 10)
+        self.assertIn("Strength mismatch", data["message"])
+        self.assertEqual(len(data["unresolved_items"]), 1)
+        self.assertIn("Strength mismatch", data["unresolved_items"][0]["reason"])
 
 
 if __name__ == "__main__":

@@ -380,13 +380,20 @@ def process_stock_message(
         reason = f"Successfully created {len(created_proposals)} pending proposal(s)."
     elif created_proposals and all_unresolved:
         service_status = ProposalServiceStatus.PARTIAL_SUCCESS
+        unresolved_reasons = "; ".join(u.reason for u in all_unresolved if u.reason)
         reason = (
             f"Created {len(created_proposals)} pending proposal(s), "
-            f"but {len(all_unresolved)} item(s) require clarification."
+            f"but {len(all_unresolved)} item(s) require clarification: {unresolved_reasons}"
         )
     else:
         service_status = ProposalServiceStatus.UNRESOLVED
-        reason = f"All {len(all_unresolved)} medicine item(s) could not be resolved against the catalogue."
+        if len(all_unresolved) == 1 and all_unresolved[0].reason:
+            reason = all_unresolved[0].reason
+        elif all_unresolved:
+            reasons = [u.reason for u in all_unresolved if u.reason]
+            reason = "; ".join(reasons) if reasons else f"All {len(all_unresolved)} medicine item(s) could not be resolved against the catalogue."
+        else:
+            reason = "No medicine items could be resolved against the catalogue."
 
     return ProposalServiceResult(
         status=service_status,
