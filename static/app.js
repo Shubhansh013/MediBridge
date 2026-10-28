@@ -634,6 +634,12 @@ function onPharmacyChange() {
   if (inventoryView && inventoryView.classList.contains('active')) {
     loadPharmacyInventory();
   }
+
+  // If chemist history view is active, reload history as well
+  const historyView = document.getElementById('view-chemist-history');
+  if (historyView && historyView.classList.contains('active')) {
+    loadPharmacyHistory();
+  }
 }
 
 // ================= CHEMIST MODULE: NLP STOCK PROPOSAL =================
@@ -1016,32 +1022,52 @@ async function loadPharmacyHistory() {
       return;
     }
 
-    container.innerHTML = records.map((rec, idx) => {
-      const isUndoType = rec.change_type === 'UNDO';
-      const badge = isUndoType
-        ? `<span class="badge" style="background:#fef3c7; color:#92400e;">ROLLBACK (UNDO)</span>`
-        : `<span class="badge badge-in-stock">UPDATE</span>`;
+    container.innerHTML = records.map((rec) => {
+      const isUndoType = (rec.change_type === 'UNDO');
+      const isUndone = Boolean(rec.is_undone);
+      const canUndo = Boolean(rec.can_undo);
 
-      // Allow Undo on recent regular update that has not been undone
-      const canShowUndoBtn = !isUndoType && !rec.is_undone && idx === 0;
+      // Medicine name resolution: prioritize actual brand name from database relationships
+      const medName = rec.medicine_name || rec.brand_name || (rec.medicine_id ? `Medicine #${rec.medicine_id}` : 'Medicine');
+      const timeStr = rec.timestamp || rec.created_at;
+      const formattedDate = timeStr ? new Date(timeStr).toLocaleString() : '';
+
+      // Non-clickable status badges for audit rows, already-undone records, or regular updates
+      // Clickable Undo button ONLY for eligible updates (can_undo === true)
+      let badgeHtml = '';
+      if (canUndo) {
+        badgeHtml = `
+          <button type="button" class="btn btn-rollback-undo"
+            style="padding: 3px 10px; font-size: 0.75rem; border-radius: var(--radius-full);"
+            onclick="undoHistoryRecord(${rec.id})">
+            ↩ ROLLBACK (UNDO)
+          </button>`;
+      } else if (isUndoType) {
+        badgeHtml = `<span class="badge badge-undo-audit">ROLLBACK AUDIT</span>`;
+      } else if (isUndone) {
+        badgeHtml = `<span class="badge badge-undone">ROLLED BACK</span>`;
+      } else {
+        badgeHtml = `<span class="badge badge-in-stock">UPDATE</span>`;
+      }
 
       return `
         <div class="card" style="border-left: 3px solid ${isUndoType ? 'var(--warning)' : 'var(--primary)'};">
           <div class="card-header">
             <div>
-              <div class="card-title" style="font-size: 0.85rem;">Medicine #${rec.medicine_id}</div>
-              <div class="card-meta">${escapeHtml(rec.timestamp ? new Date(rec.timestamp).toLocaleString() : '')}</div>
+              <div class="card-title" style="font-size: 0.85rem;">${escapeHtml(medName)}</div>
+              <div class="card-meta">${escapeHtml(formattedDate)}</div>
             </div>
-            ${badge}
+            ${badgeHtml}
           </div>
           <div style="font-size: 0.75rem; color: var(--slate-600); margin: 6px 0;">
             Status: ${rec.previous_status || 'INIT'} → <strong>${rec.new_status}</strong><br>
             Quantity: ${rec.previous_quantity != null ? rec.previous_quantity : 0} → <strong>${rec.new_quantity != null ? rec.new_quantity : 'N/A'}</strong>
           </div>
-          ${canShowUndoBtn ? `
-            <div style="margin-top: 8px;">
-              <button class="btn btn-danger" style="padding: 4px 10px; font-size: 0.75rem;" onclick="undoHistoryRecord(${rec.id})">
-                ↩ Undo This Change
+          ${canUndo ? `
+            <div style="margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--slate-100); display: flex; justify-content: flex-end;">
+              <button type="button" class="btn btn-rollback-undo"
+                style="padding: 4px 12px; font-size: 0.75rem;" onclick="undoHistoryRecord(${rec.id})">
+                ↩ ROLLBACK (UNDO)
               </button>
             </div>
           ` : ''}
@@ -1054,25 +1080,39 @@ async function loadPharmacyHistory() {
 }
 
 async function undoHistoryRecord(historyId) {
+  const numericId = parseInt(historyId, 10);
+  if (isNaN(numericId) || numericId <= 0) {
+    showToast('Invalid history record ID', 'error');
+    return;
+  }
+  if (!confirm(`Are you sure you want to rollback inventory change #${numericId}?`)) {
+    return;
+  }
   try {
-    const res = await fetch(`${API_BASE}/history/${historyId}/undo`, {
+    const res = await fetch(`${API_BASE}/history/${numericId}/undo`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        undone_by_user_id: state.chemistUserId,
         chemist_user_id: state.chemistUserId,
         pharmacy_id: state.activePharmacyId
       })
     });
 
     const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Undo failed');
+    if (!res.ok) {
+      throw new Error(formatApiError(data.detail, 'Undo failed'));
+    }
 
-    showToast('Inventory change rolled back successfully!', 'success');
-    loadPharmacyHistory();
+    showToast(data.message || 'Inventory change rolled back successfully!', 'success');
+    await loadPharmacyHistory();
+    await loadPharmacyInventory();
   } catch (err) {
     showToast(err.message, 'error');
   }
 }
+
+window.undoHistoryRecord = undoHistoryRecord;
 
 // ================= TOAST NOTIFICATION UTILITY =================
 

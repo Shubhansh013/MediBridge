@@ -34,7 +34,7 @@ from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 import sqlalchemy as sa
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from medibridge_db.database import Base, SessionLocal, engine, get_session, utc_now
 import medibridge_db.operations as ops
@@ -57,6 +57,7 @@ from medibridge.exceptions import (
     CannotUndoUndoError,
     HistoryAlreadyUndoneError,
     NewerChangeExistsError,
+    PharmacyScopeMismatchError,
     ProposalExpiredError,
     ProposalNotPendingError,
     ProposalPharmacyMismatchError,
@@ -88,8 +89,10 @@ def get_db():
         yield s
 
 
-def get_adapter() -> DBOperationsAdapter:
-    """Returns an operations adapter wired to SessionLocal."""
+def get_adapter(db: Optional[Session] = None) -> DBOperationsAdapter:
+    """Returns an operations adapter wired to SessionLocal or provided session."""
+    if db is not None:
+        return DBOperationsAdapter(session_factory=lambda: db)
     return DBOperationsAdapter(session_factory=SessionLocal)
 
 
@@ -203,7 +206,8 @@ class ProposalRejectRequest(BaseModel):
 
 
 class UndoRequest(BaseModel):
-    undone_by_user_id: int = Field(..., description="User ID requesting undo")
+    undone_by_user_id: Optional[int] = Field(None, description="User ID requesting undo")
+    chemist_user_id: Optional[int] = Field(None, description="Alias for undone_by_user_id")
     pharmacy_id: Optional[int] = None
 
 
@@ -219,6 +223,7 @@ class SubstituteApprovalRequest(BaseModel):
 class InventoryHistoryItem(BaseModel):
     id: int
     change_type: str
+    medicine_id: Optional[int] = None
     medicine_name: str
     previous_status: Optional[str] = None
     new_status: str
@@ -226,6 +231,9 @@ class InventoryHistoryItem(BaseModel):
     new_quantity: Optional[int] = None
     changed_by: int
     created_at: str
+    timestamp: Optional[str] = None
+    is_undone: bool = False
+    can_undo: bool = False
 
 
 class UserInfo(BaseModel):
@@ -928,12 +936,23 @@ async def get_pharmacy_history_endpoint(
     """Retrieve immutable audit trail of stock modifications for a pharmacy (most recent first)."""
     stmt = (
         select(StockHistory)
+        .options(joinedload(StockHistory.medicine))
         .where(StockHistory.pharmacy_id == pharmacy_id)
         .order_by(StockHistory.id.desc())
         .limit(limit)
     )
     history_rows = db.execute(stmt).scalars().all()
+
+    # Query all history IDs that have already been undone for this pharmacy
+    undone_stmt = select(StockHistory.undo_of_history_id).where(
+        StockHistory.pharmacy_id == pharmacy_id,
+        StockHistory.undo_of_history_id.isnot(None),
+    )
+    undone_ids = set(db.execute(undone_stmt).scalars().all())
+
     results: List[InventoryHistoryItem] = []
+    seen_inventory_ids: set[int] = set()
+
     for h in history_rows:
         prev_st = (
             h.previous_stock_status.value
@@ -952,17 +971,44 @@ async def get_pharmacy_history_endpoint(
             if hasattr(h.change_type, "value")
             else str(h.change_type).upper()
         )
+
+        # Resolve medicine brand name through existing database relationships
+        med_name: str
+        if h.medicine and h.medicine.brand_name:
+            med_name = h.medicine.brand_name
+        elif h.medicine_id:
+            med = db.get(Medicine, h.medicine_id)
+            med_name = med.brand_name if med else f"Medicine #{h.medicine_id}"
+        else:
+            med_name = "Unknown Medicine"
+
+        is_undo_type = (ch_type == "UNDO")
+        is_undone = (h.id in undone_ids)
+        # Latest change on that inventory row that is not an undo and not already undone
+        can_undo_flag = (
+            not is_undo_type
+            and not is_undone
+            and (h.inventory_id not in seen_inventory_ids)
+        )
+        seen_inventory_ids.add(h.inventory_id)
+
+        created_iso = h.created_at.isoformat() if h.created_at else ""
+
         results.append(
             InventoryHistoryItem(
                 id=h.id,
                 change_type=ch_type,
-                medicine_name=h.medicine.brand_name if h.medicine else "Unknown",
+                medicine_id=h.medicine_id,
+                medicine_name=med_name,
                 previous_status=prev_st,
                 new_status=new_st,
                 previous_quantity=h.previous_quantity,
                 new_quantity=h.new_quantity,
                 changed_by=h.changed_by,
-                created_at=h.created_at.isoformat() if h.created_at else "",
+                created_at=created_iso,
+                timestamp=created_iso,
+                is_undone=is_undone,
+                can_undo=can_undo_flag,
             )
         )
     return results
@@ -983,7 +1029,12 @@ async def undo_history_endpoint(
     - Cannot undo if already undone.
     - Cannot undo if a newer change exists for that inventory row.
     """
-    uid = payload.undone_by_user_id if payload else undone_by_user_id
+    uid = None
+    if payload:
+        uid = payload.undone_by_user_id if payload.undone_by_user_id is not None else payload.chemist_user_id
+    if uid is None:
+        uid = undone_by_user_id
+
     if uid is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -1000,7 +1051,7 @@ async def undo_history_endpoint(
             )
         target_pid = target_hist.pharmacy_id
 
-    adapter = get_adapter()
+    adapter = get_adapter(db)
     try:
         undo_res = orchestrate_undo(
             history_id=history_id,
@@ -1019,7 +1070,14 @@ async def undo_history_endpoint(
             if hasattr(undo_res.restored_inventory.stock_status, "value")
             else str(undo_res.restored_inventory.stock_status),
         }
-    except (CannotUndoUndoError, NewerChangeExistsError, UserNotLinkedToPharmacyError, ValueError) as exc:
+    except (
+        CannotUndoUndoError,
+        HistoryAlreadyUndoneError,
+        NewerChangeExistsError,
+        PharmacyScopeMismatchError,
+        UserNotLinkedToPharmacyError,
+        ValueError,
+    ) as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     except Exception as exc:
         raise HTTPException(
