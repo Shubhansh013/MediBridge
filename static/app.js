@@ -680,10 +680,11 @@ async function submitStockProposal() {
       showToast('Proposal created! Human confirmation required.', 'warning');
       textarea.value = '';
 
+      const sourceBadge = data.processing_source ? ` (${escapeHtml(data.processing_source)})` : '';
       resultContainer.innerHTML = `
         <div class="card" style="border-left: 4px solid var(--secondary); background: #f0fdf4;">
           <div style="font-weight: 700; color: var(--primary); margin-bottom: 4px;">
-            ✓ Interpretation Ready for Review
+            ✓ Interpretation Ready for Review${sourceBadge}
           </div>
           <p style="font-size: 0.8rem; color: var(--slate-600); margin-bottom: 10px;">
             The inventory has NOT been changed yet. Please review the pending proposal in the Proposals tab to confirm or reject.
@@ -712,11 +713,21 @@ async function submitStockProposal() {
         </div>`;
 
     } else {
+      let errorTitle = 'Could not resolve medicine';
+      const msgText = data.message || '';
+      if (msgText.toLowerCase().includes('strength mismatch')) {
+        errorTitle = 'Strength mismatch — review required';
+      } else if (msgText.toLowerCase().includes('multiple catalogue matches') || msgText.toLowerCase().includes('clarification required')) {
+        errorTitle = 'Clarification required';
+      } else if (msgText.toLowerCase().includes('not found in catalogue')) {
+        errorTitle = 'Medicine not found';
+      }
+
       resultContainer.innerHTML = `
         <div class="card" style="border-left: 4px solid var(--danger);">
-          <div style="font-weight: 700; color: var(--danger);">Could not resolve medicine</div>
+          <div style="font-weight: 700; color: var(--danger);">${escapeHtml(errorTitle)}</div>
           <p style="font-size: 0.8rem; color: var(--slate-600); margin-top: 4px;">
-            No matching brand or generic salt found for "${escapeHtml(rawText)}".
+            ${escapeHtml(msgText || `No matching brand or generic salt found for "${rawText}".`)}
           </p>
         </div>`;
     }

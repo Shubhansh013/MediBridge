@@ -28,6 +28,12 @@ SRC_DIR = PROJECT_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv(PROJECT_ROOT / ".env")
+except Exception:
+    pass
+
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
@@ -186,6 +192,7 @@ class CreateProposalResponse(BaseModel):
     flagged_for_review: Optional[bool] = None
     expires_at: Optional[str] = None
     disambiguation_options: List[MedicineSearchResult] = Field(default_factory=list)
+    processing_source: Optional[str] = None
 
 
 class ProposalConfirmRequest(BaseModel):
@@ -755,6 +762,7 @@ async def create_stock_proposal_endpoint(
             status="UNRESOLVED",
             message=result.reason or "One or more medicines require catalogue matching or human review.",
             proposals=[_map_proposal_record(p) for p in result.created_proposals],
+            processing_source=result.processing_source,
         )
 
     # Success or Partially Created
@@ -765,6 +773,7 @@ async def create_stock_proposal_endpoint(
         status="CREATED",
         message=f"Created {len(mapped_proposals)} pending proposal(s)",
         proposals=mapped_proposals,
+        processing_source=result.processing_source,
         id=first_prop.id if first_prop else None,
         pharmacy_id=first_prop.pharmacy_id if first_prop else pid,
         chemist_user_id=first_prop.chemist_user_id if first_prop else uid,

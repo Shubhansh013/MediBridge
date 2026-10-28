@@ -29,6 +29,14 @@ from medibridge.services.proposal_adapter import (
 )
 
 
+def _normalize_strength(s: Optional[str]) -> str:
+    """Normalize strength string for comparison by removing whitespace and lowercasing."""
+    if not s:
+        return ""
+    import re
+    return re.sub(r"\s+", "", str(s)).strip().lower()
+
+
 class CatalogueMedicine(BaseModel):
     """Represents a medicine catalogue entry as defined in docs/CONTRACT.md.
 
@@ -142,6 +150,10 @@ class ProposalServiceResult(BaseModel):
         default=None,
         description="Optional unique reference for grouping multi-medicine updates.",
     )
+    processing_source: Optional[str] = Field(
+        default=None,
+        description="Whether message was parsed by rules or interpreted by LLM.",
+    )
 
 
 def process_stock_message(
@@ -204,6 +216,11 @@ def process_stock_message(
         use_llm=use_llm,
         api_key=api_key,
         http_client=http_client,
+    )
+    processing_source = (
+        "Interpreted by LLM"
+        if parsed_proposal and parsed_proposal.notes and "LLM" in parsed_proposal.notes
+        else "Parsed by rules"
     )
     if parsed_proposal is None:
         return ProposalServiceResult(
@@ -269,7 +286,9 @@ def process_stock_message(
         # A strength mismatch must never silently bind a message to the wrong strength variant.
         # If identity is ambiguous or inconsistent, keep the item unresolved for disambiguation.
         if matched_med and matched_med.strength:
-            if item.strength and item.strength.strip().lower() != matched_med.strength.strip().lower():
+            norm_item_str = _normalize_strength(item.strength)
+            norm_cat_str = _normalize_strength(matched_med.strength)
+            if norm_item_str and norm_item_str != norm_cat_str:
                 custom_unresolved.append(
                     UnresolvedProposalItem(
                         item=item,
@@ -378,4 +397,5 @@ def process_stock_message(
         unresolved_items=all_unresolved,
         reason=reason,
         source_message_ref=source_message_ref,
+        processing_source=processing_source,
     )

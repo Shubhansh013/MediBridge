@@ -553,27 +553,44 @@ def seed_database(session: Session) -> Dict[str, int]:
         MedicineAlias(medicine_id=medicines[0].id, alias="dolo650", alias_type=AliasType.short),
         MedicineAlias(medicine_id=medicines[0].id, alias="dolo", alias_type=AliasType.short),
         MedicineAlias(medicine_id=medicines[0].id, alias="dolo six fifty", alias_type=AliasType.hinglish),
+        MedicineAlias(medicine_id=medicines[0].id, alias="डोलो", alias_type=AliasType.hinglish),
+        MedicineAlias(medicine_id=medicines[0].id, alias="डोलो 650", alias_type=AliasType.hinglish),
+        MedicineAlias(medicine_id=medicines[0].id, alias="डोलो650", alias_type=AliasType.hinglish),
         # Calpol
         MedicineAlias(medicine_id=medicines[1].id, alias="calpol", alias_type=AliasType.short),
         MedicineAlias(medicine_id=medicines[1].id, alias="kalpol", alias_type=AliasType.misspelling),
+        MedicineAlias(medicine_id=medicines[1].id, alias="कैल्पोल", alias_type=AliasType.hinglish),
+        MedicineAlias(medicine_id=medicines[1].id, alias="कैलपोल", alias_type=AliasType.hinglish),
         # Crocin
         MedicineAlias(medicine_id=medicines[2].id, alias="crocin", alias_type=AliasType.short),
         MedicineAlias(medicine_id=medicines[2].id, alias="krocin", alias_type=AliasType.misspelling),
+        MedicineAlias(medicine_id=medicines[2].id, alias="क्रोसिन", alias_type=AliasType.hinglish),
+        MedicineAlias(medicine_id=medicines[2].id, alias="क्रोसिन 650", alias_type=AliasType.hinglish),
         # Combiflam
         MedicineAlias(medicine_id=medicines[4].id, alias="combiflam", alias_type=AliasType.short),
         MedicineAlias(medicine_id=medicines[4].id, alias="combiflame", alias_type=AliasType.misspelling),
+        MedicineAlias(medicine_id=medicines[4].id, alias="कॉम्बीफ्लाम", alias_type=AliasType.hinglish),
+        MedicineAlias(medicine_id=medicines[4].id, alias="कॉम्बिफ्लाम", alias_type=AliasType.hinglish),
         # Augmentin
         MedicineAlias(medicine_id=medicines[5].id, alias="augmentin", alias_type=AliasType.short),
         MedicineAlias(medicine_id=medicines[5].id, alias="augmentin625", alias_type=AliasType.short),
+        MedicineAlias(medicine_id=medicines[5].id, alias="ऑगमेंटिन", alias_type=AliasType.hinglish),
+        MedicineAlias(medicine_id=medicines[5].id, alias="ऑगमेंटिन 625", alias_type=AliasType.hinglish),
+        MedicineAlias(medicine_id=medicines[5].id, alias="ऑगमेंटिन625", alias_type=AliasType.hinglish),
         # Cetrizine
         MedicineAlias(medicine_id=medicines[7].id, alias="cetrizine", alias_type=AliasType.short),
         MedicineAlias(medicine_id=medicines[7].id, alias="cetirizine", alias_type=AliasType.misspelling),
+        MedicineAlias(medicine_id=medicines[7].id, alias="सिट्रिजिन", alias_type=AliasType.hinglish),
         # Pan 40
         MedicineAlias(medicine_id=medicines[9].id, alias="pan40", alias_type=AliasType.short),
         MedicineAlias(medicine_id=medicines[9].id, alias="pan", alias_type=AliasType.short),
+        MedicineAlias(medicine_id=medicines[9].id, alias="पैन", alias_type=AliasType.hinglish),
+        MedicineAlias(medicine_id=medicines[9].id, alias="पैन 40", alias_type=AliasType.hinglish),
+        MedicineAlias(medicine_id=medicines[9].id, alias="पैन40", alias_type=AliasType.hinglish),
         # Disprin
         MedicineAlias(medicine_id=medicines[11].id, alias="disprin", alias_type=AliasType.short),
         MedicineAlias(medicine_id=medicines[11].id, alias="dispirin", alias_type=AliasType.misspelling),
+        MedicineAlias(medicine_id=medicines[11].id, alias="डिस्प्रिन", alias_type=AliasType.hinglish),
     ]
     session.add_all(aliases)
     session.flush()
